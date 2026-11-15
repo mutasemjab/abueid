@@ -1,0 +1,149 @@
+<?php
+
+/*
+| Storefront interface strings (buttons, labels, messages).
+| Page content (headings, paragraphs, images…) is managed from the dashboard.
+| Strings are also used by assets_front/js/app.js: ":name" placeholders are replaced
+| and "singular|plural" strings are chosen by the ":n" count.
+*/
+
+return [
+    'switch_lang' => 'EN',
+
+    // Header / navigation
+    'search_ph'    => 'ابحث عن لمبة، كيبل، قاطع… أو رقم القطعة',
+    'search_short' => 'بحث داخل المتجر…',
+    'search_none'  => 'ما في نتائج. اضغط Enter للبحث بالمتجر.',
+    'cart'         => 'السلة',
+    'home'         => 'الرئيسية',
+    'nav_shop'     => 'المتجر',
+    'wishlist'     => 'المفضلة',
+
+    // Home
+    'items'         => 'منتج',
+    'ask_avail'     => 'متوفرة بالفروع — اسألنا',
+    'brand_n'       => ':n منتج بالمتجر ←|:n منتجات بالمتجر ←',
+    'brand_ask'     => 'اسألنا عن منتجاتها ←',
+    'since'         => 'منذ',
+    'stat_years'    => 'سنة خبرة',
+    'stat_branches' => 'فروع',
+    'stat_brands'   => 'وكالات عالمية',
+    'stat_products' => 'صنف بالمتجر',
+    'main_branch'   => 'الفرع الرئيسي',
+    'hours_l'       => 'الدوام',
+    'phone_l'       => 'هاتف',
+    'directions'    => 'الاتجاهات على الخريطة',
+    'bulk_ok'       => 'جاهز! إذا ما انفتح واتساب تلقائياً،',
+    'bulk_open'     => 'اضغط هون',
+    'bulk_err'      => 'اكتب اسمك ورقم موبايل صحيح.',
+
+    // Shop
+    'all_products'  => 'كل المنتجات',
+    'filter'        => 'تصفية',
+    'category'      => 'القسم',
+    'brand'         => 'الشركة',
+    'price'         => 'السعر',
+    'up_to'         => 'لغاية',
+    'in_stock_only' => 'المتوفر فقط',
+    'fav_only'      => 'المفضلة فقط',
+    'reset'         => 'مسح التصفية',
+    'sort_by'       => 'ترتيب',
+    'sort_feat'     => 'الأكثر طلباً',
+    'sort_low'      => 'السعر: من الأقل',
+    'sort_high'     => 'السعر: من الأعلى',
+    'empty_t'       => 'ما لقينا قطعة بهالمواصفات',
+    'empty_p'       => 'جرّب تمسح التصفية، أو اسألنا على واتساب — غالباً بنقدر نأمّنها.',
+    'empty_cat_t'   => 'قسم :name قريباً على المتجر الإلكتروني',
+    'empty_cat_p'   => 'المنتجات متوفرة بفروعنا. ابعتلنا شو بدك على واتساب وبنرجعلك بالسعر والتوفر.',
+    'empty_wa_btn'  => 'اسأل على واتساب',
+    'results_n'     => ':n منتج|:n منتجات',
+    'favourites'    => 'المفضلة',
+    'search_for'    => 'نتائج «:q»',
+
+    // Product
+    'add'         => 'أضف للسلة',
+    'added'       => 'تمت الإضافة',
+    'buy_now'     => 'اشترِ الآن',
+    'in_stock'    => 'متوفر',
+    'low_stock'   => 'آخر :n قطع',
+    'out_stock'   => 'غير متوفر',
+    'added_toast' => 'انضافت للسلة',
+    'view_cart'   => 'عرض السلة',
+    'fav_added'   => 'انضافت للمفضلة',
+    'fav_removed' => 'انشالت من المفضلة',
+    'specs_t'     => 'المواصفات الفنية',
+    'sku'         => 'رقم القطعة',
+    'pairs_t'     => 'بتركب معها',
+    'related_t'   => 'قطع ممكن تحتاجها',
+    'vat'         => 'السعر شامل الضريبة',
+    'ask_wa'      => 'سؤال عن القطعة؟ واتساب',
+
+    // Cart
+    'cart_empty'    => 'السلة فاضية لحد الآن.',
+    'shop_now'      => 'تسوّق الآن',
+    'subtotal'      => 'المجموع',
+    'delivery_hint' => 'رسوم التوصيل بتنحسب حسب منطقتك بالخطوة الجاية.',
+    'go_checkout'   => 'إتمام الطلب',
+    'remove'        => 'إزالة',
+    'ship_left'     => 'ضيف <b>:amount</b> كمان وبيصير التوصيل مجاني',
+    'ship_free'     => '<b>مبروك!</b> التوصيل عليك مجاني',
+
+    // Checkout
+    'checkout'      => 'إتمام الطلب',
+    'co_sub'        => 'بدون تسجيل حساب. بنتصل فيك لتأكيد الطلب قبل الشحن.',
+    'co_contact'    => 'بياناتك',
+    'co_address'    => 'عنوان التوصيل',
+    'co_pay'        => 'طريقة الدفع',
+    'f_name'        => 'الاسم',
+    'f_phone'       => 'رقم الموبايل',
+    'f_address'     => 'المنطقة، الشارع، رقم البناية',
+    'f_notes'       => 'ملاحظات (اختياري)',
+    'notes_ph'      => 'مثال: الاتصال قبل الوصول',
+    'err_name'      => 'اكتب اسمك',
+    'err_phone'     => 'رقم أردني من 10 خانات يبدأ بـ 07',
+    'err_address'   => 'نحتاج العنوان لنوصلك',
+    'pay_cod_d'     => 'نقداً للمندوب',
+    'pay_cliq_d'    => 'تحويل فوري — بنبعتلك التفاصيل',
+    'place_order'   => 'تأكيد الطلب',
+    'co_legal'      => 'بالضغط على تأكيد الطلب، بنتواصل معك لتأكيد التوفر وموعد التوصيل.',
+    'order_summary' => 'ملخص الطلب',
+    'delivery'      => 'التوصيل',
+    'total'         => 'الإجمالي',
+    'free'          => 'مجاني',
+    'co_empty'      => 'سلتك فاضية — ضيف قطعة أولاً.',
+    'order_failed'  => 'ما قدرنا نرسل الطلب. حاول مرة ثانية أو تواصل معنا على واتساب.',
+    'err_unavailable' => 'في قطعة بالسلة لم تعد متوفرة. حدّث الصفحة وجرّب مرة ثانية.',
+    'err_stock'     => 'الكمية المتوفرة من «:name» هي :n فقط.',
+
+    'payment_methods' => [
+        'cod'  => 'الدفع عند الاستلام',
+        'cliq' => 'CliQ',
+    ],
+
+    // Order confirmation
+    'done_t'    => 'وصلنا طلبك، شكراً!',
+    'done_p'    => 'يا :name، رح نتصل فيك خلال ساعات العمل لتأكيد الطلب وموعد التوصيل.',
+    'order_no'  => 'رقم الطلب',
+    'send_wa'   => 'ابعت الطلب على واتساب',
+    'continue'  => 'كمّل التسوّق',
+    'cliq_note' => 'حوّل المبلغ على CliQ للاسم المستعار <b dir="ltr">:alias</b> واكتب رقم الطلب بالملاحظات.',
+
+    // WhatsApp messages
+    'wa_order'        => 'طلب جديد من الموقع',
+    'wa_bulk'         => 'طلب عرض سعر جملة',
+    'wa_name'         => 'الاسم',
+    'wa_phone'        => 'الموبايل',
+    'wa_area'         => 'المنطقة',
+    'wa_addr'         => 'العنوان',
+    'wa_pay'          => 'الدفع',
+    'wa_notes'        => 'ملاحظات',
+    'wa_ask_brand'    => 'مرحبا، بدي أسأل عن منتجات :name',
+    'wa_ask_branch'   => 'مرحبا، بخصوص :name',
+    'wa_ask_category' => 'مرحبا، بدي أسأل عن قسم :name:',
+    'wa_ask_product'  => 'مرحبا، عندي سؤال عن :sku',
+
+    // Footer
+    'ftr_shop'    => 'المتجر',
+    'ftr_help'    => 'مساعدة',
+    'ftr_contact' => 'تواصل معنا',
+];
