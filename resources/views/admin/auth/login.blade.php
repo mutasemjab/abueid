@@ -363,8 +363,8 @@
     <div class="l-panel-stripe"></div>
 
     <div class="l-brand">
-        <div class="l-brand-icon"><i class="bi bi-buildings-fill"></i></div>
-        <div class="l-brand-name">AH<span>.GROUP</span></div>
+        <div class="l-brand-icon"><i class="bi bi-lightning-charge-fill"></i></div>
+        <div class="l-brand-name">Abu<span>eid</span></div>
     </div>
 
     <div class="l-hero">
@@ -379,12 +379,12 @@
                 {{ __('messages.feature_user_roles') }}
             </li>
             <li>
-                <div class="feat-icon"><i class="bi bi-buildings"></i></div>
-                {{ __('messages.feature_courses_lessons') }}
+                <div class="feat-icon"><i class="bi bi-box-seam"></i></div>
+                {{ __('messages.feature_catalog') }}
             </li>
             <li>
-                <div class="feat-icon"><i class="bi bi-bar-chart-line-fill"></i></div>
-                {{ __('messages.feature_analytics') }}
+                <div class="feat-icon"><i class="bi bi-receipt"></i></div>
+                {{ __('messages.feature_orders') }}
             </li>
             <li>
                 <div class="feat-icon"><i class="bi bi-gear-fill"></i></div>
@@ -395,18 +395,18 @@
 
     <div class="l-stats">
         <div class="l-stat">
-            <span class="l-stat-val">12+</span>
-            <span class="l-stat-lbl">{{ __('messages.students') }}</span>
+            <span class="l-stat-val">{{ $stats['products'] }}</span>
+            <span class="l-stat-lbl">{{ __('messages.stat_products') }}</span>
         </div>
         <div class="l-stat-divider"></div>
         <div class="l-stat">
-            <span class="l-stat-val">2</span>
-            <span class="l-stat-lbl">{{ __('messages.teachers') }}</span>
+            <span class="l-stat-val">{{ $stats['categories'] }}</span>
+            <span class="l-stat-lbl">{{ __('messages.stat_categories') }}</span>
         </div>
         <div class="l-stat-divider"></div>
         <div class="l-stat">
-            <span class="l-stat-val">10+</span>
-            <span class="l-stat-lbl">{{ __('messages.courses') }}</span>
+            <span class="l-stat-val">{{ $stats['branches'] }}</span>
+            <span class="l-stat-lbl">{{ __('messages.stat_branches') }}</span>
         </div>
     </div>
 

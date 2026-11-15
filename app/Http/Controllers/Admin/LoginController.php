@@ -5,6 +5,9 @@ namespace App\Http\Controllers\Admin;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\LoginRequest;
 use App\Models\Admin;
+use App\Models\Branch;
+use App\Models\Category;
+use App\Models\Product;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Hash;
 
@@ -12,7 +15,13 @@ class LoginController extends Controller
 {
     public function show_login_view()
     {
-        return view('admin.auth.login');
+        return view('admin.auth.login', [
+            'stats' => [
+                'products'   => Product::query()->count(),
+                'categories' => Category::query()->count(),
+                'branches'   => Branch::query()->count(),
+            ],
+        ]);
     }
 
     public function login(LoginRequest $request)
