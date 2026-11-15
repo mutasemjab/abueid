@@ -7,6 +7,7 @@
         ],
         __('admin.nav.store') => [
             ['route' => 'admin.orders.index', 'active' => 'admin.orders.*', 'icon' => 'bi-receipt', 'label' => __('admin.orders.title'), 'can' => 'order-table'],
+            ['route' => 'admin.customers.index', 'active' => 'admin.customers.*', 'icon' => 'bi-person-badge', 'label' => __('admin.customers.title'), 'can' => 'customer-table'],
             ['route' => 'admin.products.index', 'active' => 'admin.products.*', 'icon' => 'bi-box-seam', 'label' => __('admin.products.title'), 'can' => 'product-table'],
             ['route' => 'admin.categories.index', 'active' => 'admin.categories.*', 'icon' => 'bi-grid', 'label' => __('admin.categories.title'), 'can' => 'category-table'],
             ['route' => 'admin.brands.index', 'active' => 'admin.brands.*', 'icon' => 'bi-award', 'label' => __('admin.brands.title'), 'can' => 'brand-table'],

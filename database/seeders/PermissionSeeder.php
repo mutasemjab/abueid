@@ -21,6 +21,7 @@ class PermissionSeeder extends Seeder
             ...$this->crud('branch'),
             ...$this->crud('area'),
             'order-table', 'order-edit', 'order-delete',
+            'customer-table', 'customer-edit', 'customer-delete',
             'section-table', 'section-edit',
             'setting-edit',
         ];

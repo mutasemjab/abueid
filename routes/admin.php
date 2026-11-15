@@ -3,6 +3,7 @@
 use App\Http\Controllers\Admin\BranchController;
 use App\Http\Controllers\Admin\BrandController;
 use App\Http\Controllers\Admin\CategoryController;
+use App\Http\Controllers\Admin\CustomerController;
 use App\Http\Controllers\Admin\DashboardController;
 use App\Http\Controllers\Admin\DeliveryAreaController;
 use App\Http\Controllers\Admin\EmployeeController;
@@ -48,6 +49,7 @@ Route::group([
         Route::resource('brands', BrandController::class)->except(['show']);
         Route::resource('delivery-areas', DeliveryAreaController::class)->except(['show']);
         Route::resource('orders', OrderController::class)->only(['index', 'show', 'update', 'destroy']);
+        Route::resource('customers', CustomerController::class)->only(['index', 'show', 'update', 'destroy']);
 
         // ── Website content ───────────────────────────────────────────
         Route::get('sections', [SectionController::class, 'index'])->name('sections.index');

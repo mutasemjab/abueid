@@ -4,6 +4,7 @@ namespace App\Services;
 
 use App\Enums\OrderStatus;
 use App\Enums\PaymentMethod;
+use App\Models\Customer;
 use App\Models\DeliveryArea;
 use App\Models\Order;
 use App\Models\Product;
@@ -18,16 +19,18 @@ use Illuminate\Validation\ValidationException;
  */
 class OrderService
 {
-    public function __construct(private readonly SiteSettings $settings)
-    {
+    public function __construct(
+        private readonly SiteSettings $settings,
+        private readonly CustomerAccount $accounts,
+    ) {
     }
 
     /**
      * @param  array{name: string, phone: string, address: string, notes: ?string, area_id: int, payment_method: string, items: list<array{id: string, qty: int}>}  $data
      */
-    public function place(array $data): Order
+    public function place(array $data, ?Customer $customer = null): Order
     {
-        return DB::transaction(function () use ($data) {
+        return DB::transaction(function () use ($data, $customer) {
             $quantities = collect($data['items'])
                 ->groupBy('id')
                 ->map(fn (Collection $lines) => (int) $lines->sum('qty'));
@@ -41,6 +44,7 @@ class OrderService
             $fee = $this->deliveryFee($area, $subtotal);
 
             $order = Order::query()->create([
+                'customer_id' => $customer?->id,
                 'number' => $this->newNumber(),
                 'customer_name' => $data['name'],
                 'customer_phone' => $data['phone'],
@@ -57,6 +61,10 @@ class OrderService
             ]);
 
             $order->items()->createMany($lines->values()->all());
+
+            if ($customer) {
+                $this->accounts->rememberAddress($customer, $area->id, $data['address']);
+            }
 
             return $order->load('items');
         });

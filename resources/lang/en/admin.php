@@ -159,6 +159,22 @@ return [
         ],
     ],
 
+    'customers' => [
+        'title'          => 'Customers',
+        'subtitle'       => 'Customer accounts registered on the website.',
+        'search'         => 'Search by name or mobile number…',
+        'spent'          => 'Total spent',
+        'joined'         => 'Joined',
+        'addresses'      => 'Saved addresses',
+        'default'        => 'Default',
+        'account'        => 'Customer account',
+        'guest'          => 'Guest order',
+        'reset_password' => 'Set a new password',
+        'new_password'   => 'New password',
+        'reset_hint'     => 'For customers who forgot their password — send it to them on WhatsApp. At least 6 characters.',
+        'password_reset' => 'The new password has been set.',
+    ],
+
     'dashboard' => [
         'subtitle'      => 'Store at a glance.',
         'view_site'     => 'View website',

@@ -17,8 +17,9 @@ class RouteServiceProvider extends ServiceProvider
      *
      * @var string
      */
-   public const Admin = '/admin';
-   public const Home = '/';
+    public const Admin = '/admin';
+
+    public const Home = '/';
 
     /**
      * Define your route model bindings, pattern filters, and other route configuration.
@@ -39,7 +40,7 @@ class RouteServiceProvider extends ServiceProvider
         });
 
         Route::middleware('admin')
-        ->group(base_path('routes/admin.php'));
+            ->group(base_path('routes/admin.php'));
 
     }
 
@@ -53,5 +54,14 @@ class RouteServiceProvider extends ServiceProvider
         RateLimiter::for('api', function (Request $request) {
             return Limit::perMinute(60)->by($request->user()?->id ?: $request->ip());
         });
+
+        // Storefront checkout.
+        RateLimiter::for('orders', fn (Request $request) => Limit::perMinute(10)->by('orders|'.$request->ip()));
+
+        // Customer sign-in / sign-up: per phone number (slows password guessing) and per IP.
+        RateLimiter::for('customer-auth', fn (Request $request) => [
+            Limit::perMinute(6)->by('auth-phone|'.preg_replace('/\D/', '', (string) $request->input('phone'))),
+            Limit::perMinute(20)->by('auth-ip|'.$request->ip()),
+        ]);
     }
 }

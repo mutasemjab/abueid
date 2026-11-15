@@ -15,4 +15,5 @@
   @include('front.views.product')
   @include('front.views.checkout')
   @include('front.views.done')
+  @include('front.views.account')
 @endsection

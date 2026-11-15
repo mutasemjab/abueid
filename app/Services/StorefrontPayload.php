@@ -20,6 +20,7 @@ class StorefrontPayload
     public function __construct(
         private readonly Storefront $storefront,
         private readonly SiteSettings $settings,
+        private readonly CustomerAccount $accounts,
     ) {
     }
 
@@ -37,6 +38,27 @@ class StorefrontPayload
             'products' => $this->products($categories->pluck('id')->all(), $brands->pluck('id')->all()),
             'branches' => Branch::query()->active()->ordered()->get()->map(fn (Branch $branch) => $this->branch($branch))->values(),
             'assurances' => $this->assurances(),
+            'account' => $this->account(),
+        ];
+    }
+
+    /**
+     * Signed-in customer state (null for guests) and the account endpoints.
+     */
+    private function account(): array
+    {
+        $customer = auth('customer')->user();
+
+        return [
+            'state' => $customer ? $this->accounts->state($customer) : null,
+            'urls' => [
+                'login' => route('account.login'),
+                'register' => route('account.register'),
+                'logout' => route('account.logout'),
+                'profile' => route('account.profile'),
+                'favourites' => route('account.favourites'),
+                'addresses' => route('account.addresses.store'),
+            ],
         ];
     }
 

@@ -17,9 +17,9 @@ class LoginController extends Controller
     {
         return view('admin.auth.login', [
             'stats' => [
-                'products'   => Product::query()->count(),
+                'products' => Product::query()->count(),
                 'categories' => Category::query()->count(),
-                'branches'   => Branch::query()->count(),
+                'branches' => Branch::query()->count(),
             ],
         ]);
     }

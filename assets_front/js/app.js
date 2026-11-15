@@ -15,7 +15,9 @@ const $$ = (s, r = document) => [...r.querySelectorAll(s)];
 const D = window.STOREFRONT;
 const S = D.store, I18N = D.i18n;
 const P = D.products, C = D.categories, B = D.brands, BR = D.branches, ASSURANCES = D.assurances;
-const CSRF = $('meta[name="csrf-token"]')?.content || "";
+const ACC = D.account;
+let me = ACC.state;          // signed-in customer state, or null for guests
+let returnTo = null;         // view to go back to after signing in (e.g. checkout)
 
 const byId = id => P.find(p => p.id === id);
 const catById = id => C.find(c => c.id === id);
@@ -41,11 +43,40 @@ const money = n => `${fmt(n)} <small>${esc(S.currency)}</small>`;
 const moneyTxt = n => `${fmt(n)} ${S.currency}`;
 const payLabel = method => (I18N.payment_methods || {})[method] || method;
 
+/* ---------- server API (JSON, same-origin session) ----------
+   Laravel rotates the CSRF token on sign-in/out and always keeps the XSRF-TOKEN cookie
+   current, so it is read on every request (falling back to the page's meta token). */
+function csrfHeaders() {
+  const cookie = document.cookie.split("; ").find(c => c.startsWith("XSRF-TOKEN="));
+  return cookie
+    ? { "X-XSRF-TOKEN": decodeURIComponent(cookie.slice(11)) }
+    : { "X-CSRF-TOKEN": $('meta[name="csrf-token"]')?.content || "" };
+}
+async function api(method, url, body) {
+  const res = await fetch(url, {
+    method,
+    headers: { "Content-Type": "application/json", "Accept": "application/json", "X-Requested-With": "XMLHttpRequest", ...csrfHeaders() },
+    body: body === undefined ? undefined : JSON.stringify(body)
+  });
+  const data = await res.json().catch(() => null);
+  if (!res.ok) {
+    const message = res.status === 429 ? t("too_many")
+      : res.status === 419 ? t("session_expired")
+      : (res.status === 422 || res.status === 409) && data?.message ? data.message
+      : t("order_failed");
+    throw Object.assign(new Error(message), { status: res.status, errors: data?.errors || {} });
+  }
+  return data;
+}
+
 /* ---------- state ---------- */
 let cart = store.get("cart", []).filter(i => byId(i.id));     // [{id, qty}]
-let favs = new Set(store.get("favs", []).filter(byId));
+let favs = new Set([...store.get("favs", []), ...(me?.favourites || [])].filter(byId));
 const saveCart = () => { store.set("cart", cart); paintCounts(); };
-const saveFavs = () => { store.set("favs", [...favs]); paintCounts(); };
+const saveFavs = () => {
+  store.set("favs", [...favs]); paintCounts();
+  if (me) api("PUT", ACC.urls.favourites, { ids: [...favs] }).then(s => { me = s; }).catch(() => {});
+};
 const cartQty = () => cart.reduce((a, i) => a + i.qty, 0);
 const cartSub = () => cart.reduce((a, i) => a + byId(i.id).price * i.qty, 0);
 const freeDelivery = sub => S.freeDeliveryFrom > 0 && sub >= S.freeDeliveryFrom;
@@ -378,40 +409,86 @@ function renderCheckout() {
   $$("[data-co-del]").forEach(e => e.innerHTML = d ? money(d) : `<span style="color:var(--ok)">${t("free")}</span>`);
   $$("[data-co-total]").forEach(e => e.innerHTML = money(sub + d));
   $("#placeBtn").disabled = !cart.length || !S.areas.length;
-  const saved = store.get("customer", null), f = $("#coForm");
-  if (saved && !f.dataset.filled) { ["name", "phone", "address"].forEach(k => { if (saved[k]) fe(f, k).value = saved[k]; }); f.dataset.filled = 1; }
+  renderCheckoutAccount();
 }
-const phoneOk = v => /^07[789]\d{7}$/.test(v.replace(/[\s-]/g, "").replace(/^(\+?962)/, "0"));
-const firstError = data => data && data.errors ? Object.values(data.errors).flat()[0] : null;
+
+/* Checkout parts that depend on the account: prefill, saved addresses, "open an account". */
+let savedPick = null;
+function renderCheckoutAccount() {
+  const f = $("#coForm");
+  $("#coAccount").innerHTML = me
+    ? t("co_logged_as", { name: esc(me.customer.name) })
+    : `${t("co_have_account")} <a href="#account" data-login-return="checkout">${t("co_login_link")}</a>`;
+  $("#coSignup").hidden = !!me;
+
+  const list = me?.addresses || [];
+  const box = $("#coSaved");
+  box.hidden = !list.length;
+  box.innerHTML = list.length ? `<p>${t("co_saved_addresses")}</p>` + list.map(a => `<label class="area"><input type="radio" name="saved" value="${a.id}" ${a.id === savedPick ? "checked" : ""}><span><b>${esc(a.area || "")}</b><i>${esc(a.address)}</i></span></label>`).join("") : "";
+
+  if (f.dataset.filled) return;
+  const saved = me ? { ...me.customer } : store.get("customer", null);
+  if (saved) ["name", "phone", "address"].forEach(k => { if (saved[k] && !fe(f, k).value) fe(f, k).value = saved[k]; });
+  const preferred = list.find(a => a.default) || list[0];
+  if (preferred) useSavedAddress(preferred.id);
+  f.dataset.filled = 1;
+}
+function useSavedAddress(id) {
+  const a = (me?.addresses || []).find(x => x.id === id); if (!a) return;
+  savedPick = id;
+  fe($("#coForm"), "address").value = a.address;
+  if (S.areas.some(x => x.id === a.area_id)) { area = a.area_id; store.set("area", area); }
+  renderCheckout();
+}
+
+const phoneOk = v => /^07[789]\d{7}$/.test(v.replace(/[\s-]/g, "").replace(/^(\+|00)?962/, "0"));
+
+/* Show server validation errors next to their inputs; unmatched ones go to the form message. */
+function formErrors(form, err) {
+  $$("label.bad", form).forEach(l => l.classList.remove("bad"));
+  const msg = $("[data-form-msg]", form);
+  const leftovers = [];
+  Object.entries(err?.errors || {}).forEach(([name, messages]) => {
+    const label = form.elements.namedItem(name)?.closest?.("label");
+    if (!label) { leftovers.push(messages[0]); return; }
+    let em = label.querySelector(".err");
+    if (!em) { em = document.createElement("em"); em.className = "err"; label.appendChild(em); }
+    em.textContent = messages[0]; label.classList.add("bad");
+  });
+  const general = err?.status ? err.message : t("order_failed");    // no status = network failure
+  const text = err ? (leftovers[0] || (Object.keys(err.errors || {}).length ? "" : general)) : "";
+  if (msg) msg.textContent = text; else if (text) toast(`<span>${esc(text)}</span>`);
+}
+
 async function submitOrder(e) {
   e.preventDefault();
   const f = e.target; let ok = true;
   const v = k => fe(f, k).value.trim();
+  const signup = !me && fe(f, "create_account").checked;
   const check = (name, valid) => { const lab = fe(f, name).closest("label"); lab.classList.toggle("bad", !valid); if (!valid && ok) { fe(f, name).focus(); ok = false; } };
   check("name", v("name").length > 1);
   check("phone", phoneOk(v("phone")));
   check("address", v("address").length > 3);
+  if (signup) check("password", fe(f, "password").value.length >= 6);
   if (!ok || !cart.length || !currentArea()) return;
 
   const btn = $("#placeBtn"); btn.disabled = true;
   try {
-    const res = await fetch(S.orderUrl, {
-      method: "POST",
-      headers: { "Content-Type": "application/json", "Accept": "application/json", "X-CSRF-TOKEN": CSRF },
-      body: JSON.stringify({
-        name: v("name"), phone: v("phone"), address: v("address"), notes: v("notes"),
-        area_id: currentArea().id, payment_method: fe(f, "pay").value,
-        items: cart.map(i => ({ id: i.id, qty: i.qty }))
-      })
+    const data = await api("POST", S.orderUrl, {
+      name: v("name"), phone: v("phone"), address: v("address"), notes: v("notes"),
+      area_id: currentArea().id, payment_method: fe(f, "pay").value,
+      items: cart.map(i => ({ id: i.id, qty: i.qty })),
+      create_account: signup, password: signup ? fe(f, "password").value : null
     });
-    const data = await res.json().catch(() => null);
-    if (!res.ok) { toast(`<span>${esc(firstError(data) || t("order_failed"))}</span>`); return; }
-    store.set("customer", { name: data.name, phone: data.phone, address: data.address });
-    store.set("lastOrder", data);
+    const { account, ...order } = data;
+    if (account) setAccount(account);
+    store.set("customer", { name: order.name, phone: order.phone, address: order.address });
+    store.set("lastOrder", order);
+    fe(f, "password").value = "";
     cart = []; saveCart(); renderCart();
     location.hash = "done";
-  } catch {
-    toast(`<span>${t("order_failed")}</span>`);
+  } catch (err) {
+    formErrors(f, err);
   } finally {
     btn.disabled = !cart.length;
   }
@@ -430,10 +507,99 @@ function renderDone() {
     <svg class="done__check" viewBox="0 0 100 100"><circle cx="50" cy="50" r="46"/><path d="M30 52l13 13 27-29"/></svg>
     <h1>${t("done_t")}</h1><p>${t("done_p", { name: esc(o.name) })}</p>
     <span class="done__no">${t("order_no")}: <b dir="ltr">${esc(o.no)}</b></span>
-    <div class="done__box"><ul class="sumlist">${o.items.map(i => `<li><span class="th"><img src="${esc(i.image || S.placeholder || "")}" alt=""><i>${i.qty}</i></span><b>${esc(i.name)}</b><span class="price">${money(i.total)}</span></li>`).join("")}</ul>
+    <div class="done__box">${orderLines(o.items)}
       <dl class="totals"><div><dt>${t("delivery")}</dt><dd>${o.fee ? money(o.fee) : t("free")}</dd></div><div class="grand"><dt>${t("total")}</dt><dd>${money(o.total)}</dd></div></dl>
       ${o.pay === "cliq" && S.cliqAlias ? `<p class="cliq">${t("cliq_note", { alias: esc(S.cliqAlias) })}</p>` : ""}</div>
-    <div class="done__btns"><a class="btn btn--primary" target="_blank" rel="noopener" href="${esc(waUrl(orderText(o)))}">${t("send_wa")}</a><a class="btn btn--line" href="#shop">${t("continue")}</a></div>`;
+    <div class="done__btns"><a class="btn btn--primary" target="_blank" rel="noopener" href="${esc(waUrl(orderText(o)))}">${t("send_wa")}</a>${me ? `<a class="btn btn--dark" href="#account">${t("acc_track")}</a>` : ""}<a class="btn btn--line" href="#shop">${t("continue")}</a></div>`;
+}
+const orderLines = items => `<ul class="sumlist">${items.map(i => `<li><span class="th"><img src="${esc(i.image || S.placeholder || "")}" alt=""><i>${i.qty}</i></span><b>${esc(i.name)}</b><span class="price">${money(i.total)}</span></li>`).join("")}</ul>`;
+
+/* ---------- account ---------- */
+let accTab = "orders";
+function setAccount(state) {
+  me = state;
+  if (state) {
+    favs = new Set(state.favourites.filter(byId));
+    store.set("favs", [...favs]);
+  }
+  paintCounts(); paintAccountButton();
+}
+function paintAccountButton() { $("#accountBtn")?.classList.toggle("is-on", !!me); }
+function renderAccount() {
+  $("#accGuest").hidden = !!me; $("#accUser").hidden = !me;
+  if (!me) {
+    const phone = fe($("#loginForm"), "phone").value.trim();
+    $("[data-forgot]").href = waUrl(t("acc_forgot_wa", { phone: phone || "—" }));
+    return;
+  }
+  $("#accHello").textContent = t("acc_hello", { name: me.customer.name });
+  $("#accPhone").textContent = me.customer.phone;
+  $$("[data-acc-tab]").forEach(b => { b.classList.toggle("is-on", b.dataset.accTab === accTab); b.setAttribute("aria-selected", b.dataset.accTab === accTab); });
+  $$("[data-acc-panel]").forEach(p => p.hidden = p.dataset.accPanel !== accTab);
+
+  $("#accOrders").innerHTML = me.orders.length ? me.orders.map(o => `<article class="order">
+      <header class="order__head"><span class="order__no" dir="ltr">${esc(o.no)}</span><span class="order__date" dir="ltr">${esc(o.date)}</span><span class="order__status order__status--${esc(o.status)}">${esc(o.status_label)}</span><span class="price">${money(o.total)}</span></header>
+      ${orderLines(o.items)}
+    </article>`).join("") : `<p class="acc__empty">${t("acc_no_orders")}</p>`;
+
+  $("#accAddresses").innerHTML = me.addresses.length ? me.addresses.map(a => `<div class="addr">
+      <div><b>${esc(a.area || "")}${a.default ? `<span class="tag">${t("acc_default")}</span>` : ""}</b><small>${esc(a.address)}</small></div>
+      <div class="addr__act">
+        ${a.default ? "" : `<button class="btn btn--line btn--sm" type="button" data-addr-default="${a.id}">${t("acc_make_default")}</button>`}
+        <button class="btn btn--line btn--sm" type="button" data-addr-edit="${a.id}">${t("acc_edit")}</button>
+        <button class="btn btn--line btn--sm" type="button" data-addr-del="${a.id}">${t("acc_delete")}</button>
+      </div>
+    </div>`).join("") : `<p class="acc__empty">${t("acc_no_addresses")}</p>`;
+  if (!$("#addrAreas").children.length) {
+    $("#addrAreas").innerHTML = S.areas.map((a, i) => `<label class="area"><input type="radio" name="area_id" value="${a.id}" ${i ? "" : "checked"}><span><b>${esc(a.name)}</b></span></label>`).join("");
+  }
+
+  const favList = P.filter(p => favs.has(p.id));
+  $("#accFavourites").innerHTML = favList.length ? favList.map(card).join("") : `<p class="acc__empty">${t("acc_no_favourites")}</p>`;
+
+  const profile = $("#profileForm");
+  if (!profile.dataset.filled) { fe(profile, "name").value = me.customer.name; profile.dataset.filled = 1; }
+  observe();
+}
+function editAddress(id) {
+  const f = $("#addressForm"), a = me.addresses.find(x => x.id === id);
+  f.reset();
+  fe(f, "id").value = a ? a.id : "";
+  if (a) {
+    fe(f, "address").value = a.address; fe(f, "is_default").checked = a.default;
+    const radio = $(`#addrAreas input[value="${a.area_id}"]`); if (radio) radio.checked = true;
+  }
+  $("[data-address-title]", f).textContent = t(a ? "acc_edit_address" : "acc_add_address");
+  formErrors(f, null);
+  if (a) f.scrollIntoView({ behavior: "smooth", block: "center" });
+}
+async function accountSubmit(form, run, after) {
+  const btn = $("button[type=submit]", form); btn.disabled = true;
+  try {
+    formErrors(form, null);
+    setAccount(await run());
+    if (after) after();
+    renderAccount();
+  } catch (err) {
+    formErrors(form, err);
+  } finally {
+    btn.disabled = false;
+  }
+}
+function afterSignIn(form) {
+  form.reset();
+  toast(`<span>${t("acc_welcome")}</span>`);
+  $("#coForm").dataset.filled = "";
+  if (returnTo) { const to = returnTo; returnTo = null; location.hash = to; }
+}
+async function logout() {
+  try { await api("POST", ACC.urls.logout); } catch { /* session already gone — sign out locally anyway */ }
+  me = null; favs = new Set();
+  store.set("favs", []); store.set("customer", null); store.set("lastOrder", null);
+  $$("#profileForm, #coForm").forEach(f => { f.reset(); f.dataset.filled = ""; });
+  accTab = "orders";
+  paintCounts(); paintAccountButton(); renderAccount();
+  toast(`<span>${t("acc_bye")}</span>`);
 }
 
 /* ---------- search ---------- */
@@ -464,6 +630,7 @@ function route() {
   } else if (h.startsWith("p-") && byId(h.slice(2))) { view = "product"; renderPDP(byId(h.slice(2))); }
   else if (h === "checkout") { view = "checkout"; renderCheckout(); }
   else if (h === "done") { view = "done"; renderDone(); }
+  else if (h === "account") { view = "account"; renderAccount(); }
   $$(".view").forEach(v => v.hidden = v.dataset.view !== view);
   if (view !== current || view === "product") scrollTo({ top: 0, behavior: "instant" });
   current = view;
@@ -511,7 +678,7 @@ function heroMotion() {
 
 /* ---------- events ---------- */
 document.addEventListener("click", e => {
-  const el = e.target.closest("[data-add],[data-buynow],[data-fav],[data-open-cart],[data-close-cart],[data-cq],[data-rm],[data-fcat],[data-chip],[data-thumb],[data-qd],[data-scroll],[data-lang-link],[data-go-fav],[data-open-filters],[data-close-filters],[data-fbrand],[data-hero],#galMain,.lightbox");
+  const el = e.target.closest("[data-add],[data-buynow],[data-fav],[data-open-cart],[data-close-cart],[data-cq],[data-rm],[data-fcat],[data-chip],[data-thumb],[data-qd],[data-scroll],[data-lang-link],[data-go-fav],[data-open-filters],[data-close-filters],[data-fbrand],[data-hero],[data-acc-tab],[data-logout],[data-addr-edit],[data-addr-del],[data-addr-default],[data-login-return],#galMain,.lightbox");
   if (!el) return;
   const d = el.dataset;
   if (d.add) {
@@ -529,6 +696,7 @@ document.addEventListener("click", e => {
     $$(`[data-fav="${CSS.escape(d.fav)}"]`).forEach(b => { b.classList.toggle("is-on", on); b.classList.remove("pop"); void b.offsetWidth; b.classList.add("pop"); });
     toast(`<img src="${esc(imgOf(byId(d.fav)))}" alt=""><span>${t(on ? "fav_added" : "fav_removed")}</span>`);
     if (current === "shop" && F.fav) renderShop();
+    if (current === "account") renderAccount();
   } else if (d.openCart != null) { e.preventDefault(); openCart(); }
   else if (d.closeCart != null) { closeCart(); }
   else if (d.cq) { const l = cart.find(i => i.id === d.cq); setQty(d.cq, l.qty + +d.d); }
@@ -555,6 +723,19 @@ document.addEventListener("click", e => {
   }
   else if (d.langLink != null) { el.href = el.href.split("#")[0] + location.hash; }
   else if (d.goFav != null) { location.hash = "favourites"; }
+  else if (d.accTab) { accTab = d.accTab; renderAccount(); }
+  else if (d.logout != null) { logout(); }
+  else if (d.loginReturn) { returnTo = d.loginReturn; }
+  else if (d.addrEdit) { editAddress(+d.addrEdit); }
+  else if (d.addrDel) {
+    if (!confirm(t("acc_confirm_delete"))) return;
+    api("DELETE", `${ACC.urls.addresses}/${+d.addrDel}`).then(s => { setAccount(s); renderAccount(); }).catch(err => toast(`<span>${esc(err.message)}</span>`));
+  }
+  else if (d.addrDefault) {
+    const a = me.addresses.find(x => x.id === +d.addrDefault);
+    api("PUT", `${ACC.urls.addresses}/${a.id}`, { area_id: a.area_id, address: a.address, is_default: true })
+      .then(s => { setAccount(s); renderAccount(); }).catch(err => toast(`<span>${esc(err.message)}</span>`));
+  }
   else if (d.openFilters != null) openFilters();
   else if (d.closeFilters != null) closeFilters();
   else if (el.id === "galMain" && !e.target.closest(".fav")) {
@@ -571,6 +752,7 @@ document.addEventListener("input", e => {
   if (el.id === "fPrice") { F.price = +el.value; $("#fPriceOut").innerHTML = money(F.price); renderShop(); }
   else if (el.id === "shopQ") { F.q = el.value; renderShop(); }
   else if (el.id === "q") suggest(el.value);
+  else if (el.closest("#loginForm") && el.name === "phone") $("[data-forgot]").href = waUrl(t("acc_forgot_wa", { phone: el.value.trim() || "—" }));
   else if (el.dataset.cqi) { const v = parseInt(el.value); if (v > 0) setQty(el.dataset.cqi, v); }
   else if (el.closest("#coForm label.bad")) el.closest("label").classList.remove("bad");
 });
@@ -579,7 +761,9 @@ document.addEventListener("change", e => {
   if (el.id === "fStock") { F.stock = el.checked; renderShop(); }
   else if (el.id === "fFav") { F.fav = el.checked; renderShop(); }
   else if (el.id === "sort") { F.sort = el.value; renderShop(); }
-  else if (el.name === "area") { area = +el.value; store.set("area", area); renderCheckout(); }
+  else if (el.name === "area") { area = +el.value; savedPick = null; store.set("area", area); renderCheckout(); }
+  else if (el.name === "saved") { useSavedAddress(+el.value); }
+  else if (el.name === "create_account") { $("[data-signup-fields]").hidden = !el.checked; }
 });
 $("#q").addEventListener("keydown", e => {
   const items = $$("#searchDrop .sug");
@@ -597,6 +781,31 @@ $("#q").addEventListener("keydown", e => {
 $("#q").addEventListener("focus", e => e.target.value && suggest(e.target.value));
 document.addEventListener("pointerdown", e => { if (!e.target.closest("#search")) $("#searchDrop").classList.remove("is-open"); });
 $("#coForm").addEventListener("submit", submitOrder);
+
+/* account forms */
+const formData = form => Object.fromEntries(new FormData(form));
+const submitWith = (selector, handler) => $(selector).addEventListener("submit", e => { e.preventDefault(); handler(e.target); });
+submitWith("#loginForm", f => accountSubmit(f,
+  () => api("POST", ACC.urls.login, { ...formData(f), remember: fe(f, "remember").checked, favourites: [...favs] }),
+  () => afterSignIn(f)));
+submitWith("#registerForm", f => accountSubmit(f,
+  () => api("POST", ACC.urls.register, { ...formData(f), favourites: [...favs] }),
+  () => afterSignIn(f)));
+submitWith("#profileForm", f => accountSubmit(f,
+  () => api("PUT", ACC.urls.profile, formData(f)),
+  () => { ["current_password", "password", "password_confirmation"].forEach(k => fe(f, k).value = ""); toast(`<span>${t("acc_saved")}</span>`); }));
+submitWith("#addressForm", f => {
+  const { id, ...data } = formData(f);
+  const body = { ...data, area_id: +data.area_id, is_default: fe(f, "is_default").checked };
+  accountSubmit(f,
+    () => id ? api("PUT", `${ACC.urls.addresses}/${+id}`, body) : api("POST", ACC.urls.addresses, body),
+    () => { editAddress(null); toast(`<span>${t("acc_saved")}</span>`); });
+});
+$("#addressForm").addEventListener("reset", e => {
+  fe(e.target, "id").value = "";
+  $("[data-address-title]", e.target).textContent = t("acc_add_address");
+  formErrors(e.target, null);
+});
 $("#emptyReset").addEventListener("click", resetFilters);
 $("#fReset").addEventListener("click", resetFilters);
 $("#bulkForm")?.addEventListener("submit", e => {
@@ -613,6 +822,7 @@ addEventListener("hashchange", route);
 
 /* ---------- boot ---------- */
 F.price = maxPrice();
-renderHome(); renderCart(); paintCounts();
+renderHome(); renderCart(); paintCounts(); paintAccountButton();
+if (me && favs.size !== me.favourites.length) saveFavs();   // push favourites collected before signing in
 route(); heroMotion(); observe();
 })();

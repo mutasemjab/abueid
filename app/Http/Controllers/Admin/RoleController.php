@@ -24,14 +24,15 @@ class RoleController extends Controller
 
         return [
             __('messages.roles_permissions') => [...$crud('role'), ...$crud('employee')],
-            __('admin.orders.title')         => ['order-table', 'order-edit', 'order-delete'],
-            __('admin.products.title')       => $crud('product'),
-            __('admin.categories.title')     => $crud('category'),
-            __('admin.brands.title')         => $crud('brand'),
-            __('admin.areas.title')          => $crud('area'),
-            __('admin.sections.title')       => ['section-table', 'section-edit'],
-            __('admin.branches.title')       => $crud('branch'),
-            __('admin.settings_page.title')  => ['setting-edit'],
+            __('admin.orders.title') => ['order-table', 'order-edit', 'order-delete'],
+            __('admin.customers.title') => ['customer-table', 'customer-edit', 'customer-delete'],
+            __('admin.products.title') => $crud('product'),
+            __('admin.categories.title') => $crud('category'),
+            __('admin.brands.title') => $crud('brand'),
+            __('admin.areas.title') => $crud('area'),
+            __('admin.sections.title') => ['section-table', 'section-edit'],
+            __('admin.branches.title') => $crud('branch'),
+            __('admin.settings_page.title') => ['setting-edit'],
         ];
     }
 
@@ -39,7 +40,7 @@ class RoleController extends Controller
     {
         $roles = Role::withCount('permissions')
             ->where('guard_name', 'admin')
-            ->when($request->search, fn($q, $s) => $q->where('name', 'like', "%$s%"))
+            ->when($request->search, fn ($q, $s) => $q->where('name', 'like', "%$s%"))
             ->orderBy('name')
             ->paginate(20)
             ->withQueryString();
@@ -50,15 +51,16 @@ class RoleController extends Controller
     public function create()
     {
         $permGroups = self::permGroups();
-        $allPerms   = Permission::where('guard_name', 'admin')->pluck('id', 'name');
+        $allPerms = Permission::where('guard_name', 'admin')->pluck('id', 'name');
+
         return view('admin.roles.create', compact('permGroups', 'allPerms'));
     }
 
     public function store(Request $request)
     {
         $request->validate([
-            'name'    => 'required|string|max:100|unique:roles,name',
-            'perms'   => 'nullable|array',
+            'name' => 'required|string|max:100|unique:roles,name',
+            'perms' => 'nullable|array',
             'perms.*' => 'integer|exists:permissions,id',
         ]);
 
@@ -70,18 +72,19 @@ class RoleController extends Controller
 
     public function edit(int $id)
     {
-        $role       = Role::findOrFail($id);
+        $role = Role::findOrFail($id);
         $permGroups = self::permGroups();
-        $allPerms   = Permission::where('guard_name', 'admin')->pluck('id', 'name');
-        $assigned   = $role->permissions->pluck('id')->toArray();
+        $allPerms = Permission::where('guard_name', 'admin')->pluck('id', 'name');
+        $assigned = $role->permissions->pluck('id')->toArray();
+
         return view('admin.roles.edit', compact('role', 'permGroups', 'allPerms', 'assigned'));
     }
 
     public function update(Request $request, int $id)
     {
         $request->validate([
-            'name'    => 'required|string|max:100|unique:roles,name,' . $id,
-            'perms'   => 'nullable|array',
+            'name' => 'required|string|max:100|unique:roles,name,'.$id,
+            'perms' => 'nullable|array',
             'perms.*' => 'integer|exists:permissions,id',
         ]);
 
@@ -95,6 +98,7 @@ class RoleController extends Controller
     public function destroy(int $id)
     {
         Role::findOrFail($id)->delete();
+
         return back()->with('success', 'تم حذف الدور.');
     }
 
@@ -102,6 +106,7 @@ class RoleController extends Controller
     public function delete(Request $request)
     {
         Role::where('id', $request->id)->delete();
+
         return 1;
     }
 }

@@ -16,6 +16,9 @@ class OrderResource extends JsonResource
     {
         return [
             'no' => $this->number,
+            'date' => $this->created_at->format('Y-m-d'),
+            'status' => $this->status->value,
+            'status_label' => $this->status->label(),
             'name' => $this->customer_name,
             'phone' => $this->customer_phone,
             'address' => $this->address,

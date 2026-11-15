@@ -11,7 +11,7 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 class Order extends Model
 {
     protected $fillable = [
-        'number', 'customer_name', 'customer_phone', 'address', 'notes', 'delivery_area_id', 'area_name',
+        'customer_id', 'number', 'customer_name', 'customer_phone', 'address', 'notes', 'delivery_area_id', 'area_name',
         'payment_method', 'subtotal', 'delivery_fee', 'total', 'status', 'locale',
     ];
 
@@ -26,6 +26,11 @@ class Order extends Model
     public function items(): HasMany
     {
         return $this->hasMany(OrderItem::class);
+    }
+
+    public function customer(): BelongsTo
+    {
+        return $this->belongsTo(Customer::class);
     }
 
     public function deliveryArea(): BelongsTo

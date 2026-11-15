@@ -3,13 +3,14 @@
 namespace App\Http\Requests\Front;
 
 use App\Enums\PaymentMethod;
+use App\Http\Requests\Front\Concerns\NormalizesPhone;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Rule;
 use Illuminate\Validation\Rules\Enum;
 
 class StoreOrderRequest extends FormRequest
 {
-    public const JORDAN_MOBILE = '/^07[789]\d{7}$/';
+    use NormalizesPhone;
 
     public function authorize(): bool
     {
@@ -17,20 +18,18 @@ class StoreOrderRequest extends FormRequest
     }
 
     /**
-     * Normalise the phone number to the local 07XXXXXXXX format.
+     * A guest may open an account while ordering (create_account + password).
      */
-    protected function prepareForValidation(): void
+    public function wantsAccount(): bool
     {
-        $phone = preg_replace('/[\s-]/', '', (string) $this->input('phone'));
-
-        $this->merge(['phone' => preg_replace('/^\+?962/', '0', $phone)]);
+        return ! $this->user('customer') && $this->boolean('create_account');
     }
 
     public function rules(): array
     {
         return [
             'name' => ['required', 'string', 'min:2', 'max:100'],
-            'phone' => ['required', 'string', 'regex:'.self::JORDAN_MOBILE],
+            'phone' => [...$this->phoneRules(), Rule::when($this->wantsAccount(), [Rule::unique('customers', 'phone')])],
             'address' => ['required', 'string', 'min:4', 'max:500'],
             'notes' => ['nullable', 'string', 'max:1000'],
             'area_id' => ['required', 'integer', Rule::exists('delivery_areas', 'id')->where('is_active', true)],
@@ -38,7 +37,14 @@ class StoreOrderRequest extends FormRequest
             'items' => ['required', 'array', 'min:1', 'max:50'],
             'items.*.id' => ['required', 'string', 'max:100'],
             'items.*.qty' => ['required', 'integer', 'min:1', 'max:999'],
+            'create_account' => ['nullable', 'boolean'],
+            'password' => [Rule::requiredIf($this->wantsAccount()), 'nullable', 'string', 'min:6', 'max:100'],
         ];
+    }
+
+    public function messages(): array
+    {
+        return ['phone.unique' => __('front.acc_phone_taken')];
     }
 
     public function attributes(): array
@@ -51,6 +57,7 @@ class StoreOrderRequest extends FormRequest
             'area_id' => __('front.co_address'),
             'payment_method' => __('front.co_pay'),
             'items' => __('front.cart'),
+            'password' => __('front.f_password'),
         ];
     }
 }

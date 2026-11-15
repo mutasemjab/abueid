@@ -5,6 +5,7 @@
       <form class="co__form" id="coForm" novalidate>
         <h1>{{ __('front.checkout') }}</h1>
         <p class="co__sub">{{ __('front.co_sub') }}</p>
+        <p class="co__acc" id="coAccount"></p>
 
         <fieldset>
           <legend><b>1</b><span>{{ __('front.co_contact') }}</span></legend>
@@ -16,6 +17,7 @@
 
         <fieldset>
           <legend><b>2</b><span>{{ __('front.co_address') }}</span></legend>
+          <div class="co__saved" id="coSaved" hidden></div>
           <div class="areas" id="areas"></div>
           <div class="fields">
             <label class="full"><span>{{ __('front.f_address') }}</span><input name="address" autocomplete="street-address" required><em class="err">{{ __('front.err_address') }}</em></label>
@@ -32,6 +34,13 @@
                 <span><b>{{ $method->label() }}</b><i>{{ __("front.pay_{$method->value}_d") }}</i></span>
               </label>
             @endforeach
+          </div>
+        </fieldset>
+
+        <fieldset id="coSignup">
+          <label class="check"><input type="checkbox" name="create_account" value="1"><span>{{ __('front.co_create_account') }}</span></label>
+          <div class="fields" data-signup-fields hidden>
+            <label class="full"><span>{{ __('front.f_password') }}</span><input type="password" name="password" autocomplete="new-password"><em class="err">{{ __('front.co_create_hint') }}</em></label>
           </div>
         </fieldset>
 

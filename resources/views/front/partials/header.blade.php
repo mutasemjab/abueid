@@ -21,6 +21,9 @@
     </div>
 
     <div class="hdr__actions">
+      <a class="hbtn" href="#account" id="accountBtn" aria-label="{{ __('front.account') }}" title="{{ __('front.account') }}">
+        <svg viewBox="0 0 20 20" aria-hidden="true"><circle cx="10" cy="6.5" r="3.5"/><path d="M3.5 17.5c.8-3.3 3.4-5 6.5-5s5.7 1.7 6.5 5"/></svg>
+      </a>
       <button class="hbtn hbtn--fav" type="button" data-go-fav aria-label="{{ __('front.wishlist') }}">
         <svg viewBox="0 0 20 20" aria-hidden="true"><path pathLength="1" d="M10 17s-6.5-3.9-6.5-8.6A3.6 3.6 0 0 1 10 6.3a3.6 3.6 0 0 1 6.5 2.1C16.5 13.1 10 17 10 17z"/></svg>
         <b class="badge" data-fav-count>0</b>

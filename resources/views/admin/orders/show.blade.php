@@ -1,7 +1,7 @@
 @extends('admin.layouts.app')
 @section('title', __('admin.orders.order').' '.$order->number)
 
-@php($whatsappNumber = preg_replace('/^0/', '962', $order->customer_phone))
+@php($whatsappNumber = \App\Support\Phone::international($order->customer_phone))
 
 @section('content')
     <x-admin.page-header :title="__('admin.orders.order').' '.$order->number" :subtitle="$order->created_at->format('Y-m-d H:i')">
@@ -54,7 +54,15 @@
         <div class="col-12 col-xl-4 d-flex flex-column gap-4">
             <x-admin.card :title="__('admin.orders.customer')" icon="bi-person">
                 <dl class="mb-0">
-                    <dt>{{ __('admin.fields.name') }}</dt><dd>{{ $order->customer_name }}</dd>
+                    <dt>{{ __('admin.fields.name') }}</dt>
+                    <dd>
+                        {{ $order->customer_name }}
+                        @if ($order->customer_id && auth('admin')->user()->can('customer-table'))
+                            <a href="{{ route('admin.customers.show', $order->customer_id) }}" class="pill pill-info ms-1">{{ __('admin.customers.account') }}</a>
+                        @elseif (! $order->customer_id)
+                            <span class="pill pill-neutral ms-1">{{ __('admin.customers.guest') }}</span>
+                        @endif
+                    </dd>
                     <dt>{{ __('admin.fields.phone') }}</dt><dd dir="ltr" class="text-start">{{ $order->customer_phone }}</dd>
                     <dt>{{ __('admin.orders.area') }}</dt><dd>{{ $order->area_name }}</dd>
                     <dt>{{ __('admin.fields.address') }}</dt><dd>{{ $order->address }}</dd>
