@@ -6,7 +6,6 @@
         'label' => $spec->getTranslations('label'),
         'value' => $spec->getTranslations('value'),
     ])->all() ?? []);
-    $selectedPairs = array_map('intval', old('pairs', $product->pairs?->pluck('id')->all() ?? []));
 @endphp
 
 @section('content')
@@ -28,6 +27,7 @@
                         <x-admin.translatable name="name" :label="__('admin.fields.name')" :values="$product->getTranslations('name')" required />
                         <x-admin.translatable name="short_description" :label="__('admin.fields.short_description')" :values="$product->getTranslations('short_description')" />
                         <x-admin.translatable name="subcategory" :label="__('admin.fields.subcategory')" :values="$product->getTranslations('subcategory')" />
+                        <x-admin.translatable name="unit" :label="__('admin.fields.unit')" :values="$product->getTranslations('unit')" :hint="__('admin.products.unit_hint')" />
                     </div>
                 </x-admin.card>
 
@@ -93,7 +93,8 @@
                 <x-admin.card :title="__('admin.products.pricing')" icon="bi-cash-coin">
                     <div class="row g-3">
                         <div class="col-6"><x-admin.input name="price" type="number" step="0.01" min="0" :label="__('admin.fields.price')" :value="$product->price" required ltr /></div>
-                        <div class="col-6"><x-admin.input name="stock" type="number" min="0" :label="__('admin.fields.stock')" :value="$product->stock" required ltr /></div>
+                        <div class="col-6"><x-admin.input name="tax_rate" type="number" step="0.01" min="0" max="100" :label="__('admin.fields.tax_rate')" :value="$product->tax_rate" required ltr /></div>
+                        <div class="col-12"><x-admin.input name="stock" type="number" min="0" :label="__('admin.fields.stock')" :value="$product->stock" ltr :hint="__('admin.products.stock_hint')" /></div>
                         <div class="col-6"><x-admin.input name="range_min" type="number" step="0.01" min="0" :label="__('admin.fields.range_min')" :value="$product->range_min" ltr /></div>
                         <div class="col-6"><x-admin.input name="range_max" type="number" step="0.01" min="0" :label="__('admin.fields.range_max')" :value="$product->range_max" ltr /></div>
                         <div class="col-12"><div class="form-text mt-0">{{ __('admin.products.range_hint') }}</div></div>
@@ -101,9 +102,12 @@
                 </x-admin.card>
 
                 <x-admin.card :title="__('admin.fields.pairs')" icon="bi-link-45deg">
-                    <select name="pairs[]" class="form-select" multiple data-placeholder="{{ __('admin.products.pairs_hint') }}">
-                        @foreach ($others as $other)
-                            <option value="{{ $other->id }}" @selected(in_array($other->id, $selectedPairs, true))>{{ $other->sku }} — {{ $other->name }}</option>
+                    {{-- Searches the catalogue as you type (see the script below); only the chosen products are rendered. --}}
+                    <select name="pairs[]" id="f_pairs" class="form-select no-select2" multiple
+                            data-url="{{ route('admin.products.search', ['except' => $product->id]) }}"
+                            data-placeholder="{{ __('admin.products.pairs_hint') }}">
+                        @foreach ($pairOptions as $option)
+                            <option value="{{ $option->id }}" selected>{{ $option->sku }} — {{ $option->name }}</option>
                         @endforeach
                     </select>
                 </x-admin.card>
@@ -134,5 +138,19 @@
         if (button) button.closest('.spec-row').remove();
     });
 })();
+
+// "Pairs with": search the catalogue on the server instead of listing every product.
+$(function () {
+    const select = $('#f_pairs');
+    select.select2({
+        theme: 'bootstrap-5',
+        dir: document.documentElement.getAttribute('dir') || 'ltr',
+        width: '100%',
+        placeholder: select.data('placeholder'),
+        minimumInputLength: 2,
+        ajax: { url: select.data('url'), dataType: 'json', delay: 250, data: (params) => ({ q: params.term }) },
+    });
+});
+
 </script>
 @endpush

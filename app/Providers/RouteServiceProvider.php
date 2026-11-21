@@ -55,6 +55,9 @@ class RouteServiceProvider extends ServiceProvider
             return Limit::perMinute(60)->by($request->user()?->id ?: $request->ip());
         });
 
+        // Storefront catalogue browsing / search-as-you-type.
+        RateLimiter::for('catalog', fn (Request $request) => Limit::perMinute(240)->by('catalog|'.$request->ip()));
+
         // Storefront checkout.
         RateLimiter::for('orders', fn (Request $request) => Limit::perMinute(10)->by('orders|'.$request->ip()));
 

@@ -2,12 +2,12 @@
 
 namespace App\Services;
 
+use App\Http\Resources\ProductCardResource;
 use App\Models\Branch;
 use App\Models\Brand;
 use App\Models\Category;
 use App\Models\DeliveryArea;
 use App\Models\Product;
-use App\Models\ProductSpec;
 use App\Models\SectionItem;
 use Illuminate\Support\Str;
 
@@ -21,24 +21,55 @@ class StorefrontPayload
         private readonly Storefront $storefront,
         private readonly SiteSettings $settings,
         private readonly CustomerAccount $accounts,
+        private readonly Catalog $catalog,
     ) {
     }
 
+    /**
+     * The catalogue itself is too large for the page: only counts, the price range and the
+     * featured products are embedded; the rest is loaded from the products API.
+     */
     public function build(): array
     {
-        $categories = $this->storefront->categories();
-        $brands = Brand::query()->active()->ordered()->get();
+        $stats = $this->catalogStats();
 
         return [
             'locale' => app()->getLocale(),
             'i18n' => trans('front'),
-            'store' => $this->store(),
-            'categories' => $categories->map(fn (Category $category) => $this->category($category))->values(),
-            'brands' => $brands->map(fn (Brand $brand) => $this->brand($brand))->values(),
-            'products' => $this->products($categories->pluck('id')->all(), $brands->pluck('id')->all()),
+            'store' => $this->store($stats),
+            'categories' => $this->storefront->categories()
+                ->map(fn (Category $category) => $this->category($category, $stats))->values(),
+            'brands' => Brand::query()->active()->ordered()->get()
+                ->map(fn (Brand $brand) => $this->brand($brand, $stats))->values(),
+            'featured' => ProductCardResource::collection($this->catalog->featured())->resolve(),
             'branches' => Branch::query()->active()->ordered()->get()->map(fn (Branch $branch) => $this->branch($branch))->values(),
             'assurances' => $this->assurances(),
             'account' => $this->account(),
+        ];
+    }
+
+    /**
+     * Sellable product counts per category / brand, first photo per category and the price range.
+     */
+    private function catalogStats(): array
+    {
+        $sellable = fn () => Product::query()->sellable()->toBase();
+
+        $range = $sellable()->selectRaw('count(*) as total, min(price) as min_price, max(price) as max_price')->first();
+
+        $thumbs = $sellable()
+            ->join('product_images', 'product_images.product_id', '=', 'products.id')
+            ->groupBy('products.category_id')
+            ->selectRaw('products.category_id, min(product_images.path) as path')
+            ->pluck('path', 'category_id');
+
+        return [
+            'total' => (int) $range->total,
+            'min' => (float) $range->min_price,
+            'max' => (float) $range->max_price,
+            'categories' => $sellable()->groupBy('category_id')->selectRaw('category_id, count(*) as n')->pluck('n', 'category_id'),
+            'brands' => $sellable()->whereNotNull('brand_id')->groupBy('brand_id')->selectRaw('brand_id, count(*) as n')->pluck('n', 'brand_id'),
+            'thumbs' => $thumbs,
         ];
     }
 
@@ -62,9 +93,13 @@ class StorefrontPayload
         ];
     }
 
-    private function store(): array
+    private function store(array $stats): array
     {
         return [
+            'productCount' => $stats['total'],
+            'priceMin' => floor($stats['min']),
+            'priceMax' => ceil($stats['max']),
+            'productsUrl' => route('products.index'),
             'whatsapp' => (string) $this->settings->get('whatsapp', ''),
             'cliqAlias' => (string) $this->settings->get('cliq_alias', ''),
             'freeDeliveryFrom' => (float) $this->settings->get('free_delivery_from', 0),
@@ -80,19 +115,21 @@ class StorefrontPayload
         ];
     }
 
-    private function category(Category $category): array
+    private function category(Category $category, array $stats): array
     {
         return [
             'id' => $category->slug,
             'name' => $category->name,
             'blurb' => $category->blurb,
-            'subs' => $category->subcategoryList(),
+            'subs' => array_slice($category->subcategoryList(), 0, 8),
             'img' => media_url($category->image),
+            'thumb' => media_url($stats['thumbs'][$category->id] ?? null),
+            'count' => (int) ($stats['categories'][$category->id] ?? 0),
             'ghost' => Str::before((string) $category->getTranslation('name', 'en'), ' '),
         ];
     }
 
-    private function brand(Brand $brand): array
+    private function brand(Brand $brand, array $stats): array
     {
         return [
             'id' => $brand->slug,
@@ -100,52 +137,8 @@ class StorefrontPayload
             'logo' => media_url($brand->logo),
             'origin' => $brand->origin,
             'line' => $brand->product_line,
+            'count' => (int) ($stats['brands'][$brand->id] ?? 0),
         ];
-    }
-
-    private function products(array $categoryIds, array $brandIds): array
-    {
-        return Product::query()
-            ->active()
-            ->ordered()
-            ->whereIn('category_id', $categoryIds)
-            ->with(['category:id,slug', 'brand', 'images', 'specs', 'pairs' => fn ($query) => $query->select('products.id', 'products.slug')])
-            ->get()
-            ->map(function (Product $product) use ($brandIds) {
-                $brand = in_array($product->brand_id, $brandIds, true) ? $product->brand : null;
-
-                return [
-                    'id' => $product->slug,
-                    'sku' => $product->sku,
-                    'cat' => $product->category->slug,
-                    'sub' => $product->subcategory,
-                    'brand' => $brand?->slug,
-                    'brandName' => $brand?->name,
-                    'series' => $product->series,
-                    'name' => $product->name,
-                    'short' => $product->short_description,
-                    'price' => $product->price,
-                    'stock' => $product->stock,
-                    'min' => $product->range_min,
-                    'max' => $product->range_max,
-                    'images' => $product->images->map->url()->values(),
-                    'specs' => $product->specs->map(fn (ProductSpec $spec) => [
-                        'label' => $spec->label,
-                        'value' => $spec->value,
-                        'ltr' => $spec->isTechnical(),
-                    ])->values(),
-                    'pairs' => $product->pairs->pluck('slug')->values(),
-                    'search' => mb_strtolower(implode(' ', [
-                        $product->sku,
-                        $product->series,
-                        $brand?->name,
-                        ...array_values($product->getTranslations('name')),
-                        ...array_values($product->getTranslations('short_description')),
-                    ])),
-                ];
-            })
-            ->values()
-            ->all();
     }
 
     private function branch(Branch $branch): array

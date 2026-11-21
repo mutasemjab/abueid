@@ -19,6 +19,14 @@
                 @endforeach
             </select>
         </div>
+        <div class="col-12 col-md-2">
+            <select name="status" class="form-select form-select-sm no-select2">
+                <option value="">{{ __('admin.products.all_statuses') }}</option>
+                @foreach (['visible', 'hidden', 'unpriced'] as $status)
+                    <option value="{{ $status }}" @selected(request('status') === $status)>{{ __("admin.products.status_{$status}") }}</option>
+                @endforeach
+            </select>
+        </div>
     </x-admin.search>
 
     <div class="panel-card">
@@ -50,9 +58,19 @@
                                 </td>
                                 <td dir="ltr"><code>{{ $product->sku }}</code></td>
                                 <td>{{ $product->category?->name }}</td>
-                                <td dir="ltr">{{ number_format($product->price, 2) }}</td>
+                                <td dir="ltr">
+                                    @if ($product->price > 0)
+                                        {{ number_format($product->price, 2) }}
+                                    @else
+                                        <span class="pill pill-warning">{{ __('admin.products.status_unpriced') }}</span>
+                                    @endif
+                                </td>
                                 <td>
-                                    <span class="pill {{ $product->stock === 0 ? 'pill-danger' : ($product->stock <= 5 ? 'pill-warning' : 'pill-success') }}">{{ $product->stock }}</span>
+                                    @if ($product->tracksStock())
+                                        <span class="pill {{ $product->stock === 0 ? 'pill-danger' : ($product->stock <= 5 ? 'pill-warning' : 'pill-success') }}">{{ $product->stock }}</span>
+                                    @else
+                                        <span class="text-muted" title="{{ __('admin.products.stock_untracked') }}">—</span>
+                                    @endif
                                 </td>
                                 <td><x-admin.status :active="$product->is_active" /></td>
                                 <td>

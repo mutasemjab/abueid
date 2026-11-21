@@ -9,6 +9,7 @@ use App\Models\Category;
 use App\Models\Product;
 use App\Services\MediaService;
 use Illuminate\Contracts\View\View;
+use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -18,6 +19,7 @@ class ProductController extends Controller
     public function __construct(private readonly MediaService $media)
     {
         $this->resourcePermissions('product');
+        $this->middleware($this->perm('product-edit'))->only('search');
     }
 
     public function index(Request $request): View
@@ -25,11 +27,10 @@ class ProductController extends Controller
         $products = Product::query()
             ->with(['category', 'brand', 'images'])
             ->when($request->query('category'), fn ($query, $category) => $query->where('category_id', $category))
-            ->when($request->query('search'), fn ($query, $search) => $query->where(fn ($query) => $query
-                ->where('sku', 'like', "%{$search}%")
-                ->orWhere('slug', 'like', "%{$search}%")
-                ->orWhere('name->ar', 'like', "%{$search}%")
-                ->orWhere('name->en', 'like', "%{$search}%")))
+            ->when($request->query('status') === 'visible', fn ($query) => $query->where('is_active', true))
+            ->when($request->query('status') === 'hidden', fn ($query) => $query->where('is_active', false))
+            ->when($request->query('status') === 'unpriced', fn ($query) => $query->where('price', '<=', 0))
+            ->when($request->query('search'), fn ($query, $search) => $query->search($search))
             ->ordered()
             ->paginate(20)
             ->withQueryString();
@@ -41,7 +42,24 @@ class ProductController extends Controller
 
     public function create(): View
     {
-        return $this->form(new Product(['is_active' => true, 'stock' => 0]));
+        return $this->form(new Product(['is_active' => true, 'tax_rate' => 16]));
+    }
+
+    /**
+     * Product picker for the "pairs with" select (searches as the admin types).
+     */
+    public function search(Request $request): JsonResponse
+    {
+        $results = Product::query()
+            ->when($request->query('q'), fn ($query, $term) => $query->search($term))
+            ->whereKeyNot((int) $request->query('except'))
+            ->orderBy('id')
+            ->limit(20)
+            ->get(['id', 'sku', 'name']);
+
+        return response()->json([
+            'results' => $results->map(fn (Product $product) => ['id' => $product->id, 'text' => "{$product->sku} — {$product->name}"]),
+        ]);
     }
 
     public function store(ProductRequest $request): RedirectResponse
@@ -75,11 +93,13 @@ class ProductController extends Controller
 
     private function form(Product $product): View
     {
+        $selectedPairs = array_map('intval', (array) old('pairs', $product->pairs->modelKeys()));
+
         return view('admin.products.form', [
             'product' => $product,
             'categories' => Category::query()->ordered()->get(),
             'brands' => Brand::query()->ordered()->get(),
-            'others' => Product::query()->whereKeyNot($product->id)->ordered()->get(['id', 'sku', 'name']),
+            'pairOptions' => Product::query()->whereKey($selectedPairs)->get(['id', 'sku', 'name']),
         ]);
     }
 

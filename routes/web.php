@@ -4,6 +4,7 @@ use App\Http\Controllers\Account\AccountController;
 use App\Http\Controllers\Account\AuthController;
 use App\Http\Controllers\HomeController;
 use App\Http\Controllers\OrderController;
+use App\Http\Controllers\ProductController;
 use Illuminate\Support\Facades\Route;
 use Mcamara\LaravelLocalization\Facades\LaravelLocalization;
 
@@ -12,6 +13,13 @@ Route::group([
     'middleware' => ['localeSessionRedirect', 'localizationRedirect', 'localeViewPath'],
 ], function () {
     Route::get('/', [HomeController::class, 'index'])->name('home');
+
+    // ── Catalogue (JSON endpoints used by the storefront script) ──
+    Route::middleware('throttle:catalog')->group(function () {
+        Route::get('products', [ProductController::class, 'index'])->name('products.index');
+        Route::get('products/{slug}', [ProductController::class, 'show'])->name('products.show');
+    });
+
     Route::post('orders', [OrderController::class, 'store'])->middleware('throttle:orders')->name('orders.store');
 
     // ── Customer account (JSON endpoints used by the storefront script) ──

@@ -2,9 +2,10 @@
    Abu Eid Electrical — storefront logic (vanilla JS)
    routing · catalog · cart · checkout · motion
 
-   All content comes from the server (window.STOREFRONT), already
-   resolved to the current language. Interface strings live in
-   resources/lang/{locale}/front.php.
+   Page content comes from the server (window.STOREFRONT), already
+   resolved to the current language. The catalogue is too large to embed,
+   so products are fetched from the products API and cached by id.
+   Interface strings live in resources/lang/{locale}/front.php.
    ========================================================= */
 (() => {
 "use strict";
@@ -14,15 +15,23 @@ const $$ = (s, r = document) => [...r.querySelectorAll(s)];
 
 const D = window.STOREFRONT;
 const S = D.store, I18N = D.i18n;
-const P = D.products, C = D.categories, B = D.brands, BR = D.branches, ASSURANCES = D.assurances;
+const C = D.categories, B = D.brands, BR = D.branches, ASSURANCES = D.assurances;
 const ACC = D.account;
 let me = ACC.state;          // signed-in customer state, or null for guests
 let returnTo = null;         // view to go back to after signing in (e.g. checkout)
 
-const byId = id => P.find(p => p.id === id);
+/* ---------- product cache ----------
+   Cards seen anywhere (featured, shop pages, search, cart) are kept by id so the cart,
+   favourites and checkout can render without refetching. */
+const cache = new Map();
+const remember = list => { list.forEach(p => cache.set(p.id, { ...cache.get(p.id), ...p })); return list; };
+remember(D.featured);
+const byId = id => cache.get(id);
 const catById = id => C.find(c => c.id === id);
 const brandById = id => B.find(b => b.id === id);
-const imgOf = p => p.images[0] || S.placeholder || "";
+const imgOf = p => p?.img || S.placeholder || "";
+const maxQty = p => (p.stock == null ? 999 : p.stock);       // null = stock not tracked
+const inStock = p => p.stock == null || p.stock > 0;
 
 /* ---------- safe storage ---------- */
 const store = {
@@ -69,25 +78,43 @@ async function api(method, url, body) {
   return data;
 }
 
+/* ---------- catalogue API ---------- */
+const query = params => new URLSearchParams(Object.entries(params).filter(([, v]) => v !== "" && v != null && v !== false)).toString();
+const fetchProducts = params => api("GET", `${S.productsUrl}?${query(params)}`).then(r => { remember(r.data); return r; });
+const fetchProduct = id => api("GET", `${S.productsUrl}/${encodeURIComponent(id)}`)
+  .then(p => { remember([...p.pairs, ...p.related]); cache.set(p.id, p); return p; });
+
+/** Load the given product ids into the cache. Resolves false when the request failed. */
+async function ensureProducts(ids) {
+  const missing = [...new Set(ids)].filter(id => !cache.has(id));
+  try {
+    for (let i = 0; i < missing.length; i += 100) await fetchProducts({ ids: missing.slice(i, i + 100).join(",") });
+    return true;
+  } catch { return false; }
+}
+
 /* ---------- state ---------- */
-let cart = store.get("cart", []).filter(i => byId(i.id));     // [{id, qty}]
-let favs = new Set([...store.get("favs", []), ...(me?.favourites || [])].filter(byId));
+let cart = store.get("cart", []).filter(i => i && i.id && i.qty > 0);     // [{id, qty}]
+let favs = new Set([...store.get("favs", []), ...(me?.favourites || [])]);
 const saveCart = () => { store.set("cart", cart); paintCounts(); };
 const saveFavs = () => {
   store.set("favs", [...favs]); paintCounts();
   if (me) api("PUT", ACC.urls.favourites, { ids: [...favs] }).then(s => { me = s; }).catch(() => {});
 };
 const cartQty = () => cart.reduce((a, i) => a + i.qty, 0);
-const cartSub = () => cart.reduce((a, i) => a + byId(i.id).price * i.qty, 0);
+const cartLines = () => cart.map(i => ({ ...i, p: byId(i.id) })).filter(l => l.p);   // lines whose product is loaded
+const cartSub = () => cartLines().reduce((a, l) => a + l.p.price * l.qty, 0);
 const freeDelivery = sub => S.freeDeliveryFrom > 0 && sub >= S.freeDeliveryFrom;
 
 /* ---------- shared fragments ---------- */
 const heart = `<svg viewBox="0 0 20 20" aria-hidden="true"><path d="M10 17s-6.5-3.9-6.5-8.6A3.6 3.6 0 0 1 10 6.3a3.6 3.6 0 0 1 6.5 2.1C16.5 13.1 10 17 10 17z"/></svg>`;
 function stockBadge(p) {
-  if (p.stock <= 0) return `<span class="stock stock--out">${t("out_stock")}</span>`;
-  if (p.stock <= 5) return `<span class="stock stock--low">${t("low_stock", { n: p.stock })}</span>`;
+  if (!inStock(p)) return `<span class="stock stock--out">${t("out_stock")}</span>`;
+  if (p.stock != null && p.stock <= 5) return `<span class="stock stock--low">${t("low_stock", { n: p.stock })}</span>`;
   return `<span class="stock">${t("in_stock")}</span>`;
 }
+/** Price with its sale unit, e.g. "0.8 JOD / m" (no unit = per piece). */
+const priceOf = (p, amount = p.price) => `${money(amount)}${p.unit ? ` <small class="unit">/ ${esc(p.unit)}</small>` : ""}`;
 function card(p, i = 0) {
   return `<article class="card reveal" style="--i:${i % 4}" data-id="${esc(p.id)}">
     <a class="card__media" href="#p-${esc(p.id)}" aria-label="${esc(p.name)}">
@@ -101,8 +128,8 @@ function card(p, i = 0) {
       <p class="card__short">${esc(p.short || "")}</p>
       ${stockBadge(p)}
       <div class="card__foot">
-        <span class="price">${money(p.price)}</span>
-        <button class="add" type="button" data-add="${esc(p.id)}" ${p.stock <= 0 ? "disabled" : ""}>${t("add")}</button>
+        <span class="price">${priceOf(p)}</span>
+        <button class="add" type="button" data-add="${esc(p.id)}" ${inStock(p) ? "" : "disabled"}>${t("add")}</button>
       </div>
     </div>
   </article>`;
@@ -122,7 +149,7 @@ function renderHome() {
 function renderCategories() {
   const grid = $("#catGrid"); if (!grid) return;
   grid.innerHTML = C.map((c, i) => {
-    const items = P.filter(p => p.cat === c.id), n = items.length, prod = items[0]?.images[0];
+    const n = c.count, prod = c.thumb;
     return `<a class="cat ${prod ? "" : "cat--type"} reveal" style="--i:${i % 3}" href="#cat-${esc(c.id)}" data-catimg="${esc(c.img || "")}">
       <span class="cat__no">${String(i + 1).padStart(2, "0")}</span>
       <h3>${esc(c.name)}</h3><p>${esc(c.blurb || "")}</p>
@@ -150,16 +177,16 @@ function renderTicker() {
 function renderFeatured() {
   const grid = $("#featGrid"); if (!grid) return;
   const limit = +grid.dataset.limit || 4;
-  grid.innerHTML = P.slice().sort((a, b) => b.stock - a.stock).slice(0, limit).map(card).join("");
+  grid.innerHTML = D.featured.slice(0, limit).map(card).join("");
 }
 
 /* ---------- hero carousel ---------- */
 let hi = 0, htimer;
-const heroSlides = () => P.filter(p => p.stock > 0 && p.images.length);
+const heroSlides = () => D.featured.filter(p => p.img);
 function buildHero() {
   const obj = $("#heroObj"), sl = heroSlides();
   if (!obj || !sl.length) return;
-  obj.innerHTML = sl.map(p => `<img src="${esc(p.images[0])}" alt="${esc(p.name)}" width="900" height="900">`).join("");
+  obj.innerHTML = sl.map(p => `<img src="${esc(p.img)}" alt="${esc(p.name)}" width="900" height="900">`).join("");
   $("#heroDots").innerHTML = sl.map((p, i) => `<button type="button" data-hero="${i}" aria-label="${esc(p.sku)}"><i></i></button>`).join("");
   setHero(hi);
 }
@@ -172,13 +199,13 @@ function setHero(i) {
   heroCard.href = `#p-${p.id}`;
   $("#heroCat").textContent = (catById(p.cat)?.name || "") + (p.sub ? " · " + p.sub : "");
   $("#heroName").textContent = p.name;
-  $("#heroPrice").innerHTML = money(p.price);
+  $("#heroPrice").innerHTML = priceOf(p);
   $("#heroModel").textContent = p.sku;
   clearTimeout(htimer); htimer = setTimeout(() => setHero(hi + 1), 4500);
 }
 
 /* ---------- brands ---------- */
-const brandCount = b => P.filter(p => p.brand === b.id).length;
+const brandCount = b => b.count;
 const logoBox = (b, cls = "") => `<span class="logo ${cls}">${b.logo ? `<img src="${esc(b.logo)}" alt="${esc(b.name)}" loading="lazy">` : ""}<span class="wordmark">${esc(b.name)}</span></span>`;
 function wireLogos(root) {
   if (!root) return;
@@ -215,7 +242,7 @@ function renderAbout() {
     years ? [years + "+", t("stat_years")] : null,
     BR.length ? [BR.length, t("stat_branches")] : null,
     B.length ? [B.length, t("stat_brands")] : null,
-    P.length ? [P.length + "+", t("stat_products")] : null
+    S.productCount ? [S.productCount.toLocaleString("en-US") + "+", t("stat_products")] : null
   ].filter(Boolean).map(([v, l]) => `<div><dt>${v}</dt><dd>${l}</dd></div>`).join("");
 }
 
@@ -248,39 +275,79 @@ function renderBranches() {
   });
 }
 
-/* ---------- shop ---------- */
-const F = { cats: new Set(), brands: new Set(), price: 0, stock: false, fav: false, q: "", sort: "feat" };
-const prices = () => P.map(p => p.price);
-const maxPrice = () => P.length ? Math.ceil(Math.max(...prices())) : 0;
-const minPrice = () => P.length ? Math.floor(Math.min(...prices())) : 0;
+/* ---------- shop (filtered, sorted and paginated on the server) ---------- */
+const F = { cats: new Set(), brands: new Set(), price: S.priceMax, stock: false, fav: false, q: "", sort: "feat" };
+const shop = { page: 0, lastPage: 0, total: 0, seq: 0 };
+const debounce = (fn, ms) => { let timer; return (...args) => { clearTimeout(timer); timer = setTimeout(() => fn(...args), ms); }; };
+const renderShopSoon = debounce(() => renderShop(), 250);
+
 function renderFilters() {
   $("#fCats").innerHTML = C.map(c => {
-    const count = P.filter(p => p.cat === c.id).length, im = P.find(p => p.cat === c.id)?.images[0];
-    const thumb = im ? `<img src="${esc(im)}" alt="">` : `<span class="fcat__ph">${esc(c.name.replace(/^ال/, "").charAt(0))}</span>`;
-    return `<button type="button" class="fcat ${F.cats.has(c.id) ? "is-on" : ""}" data-fcat="${esc(c.id)}">${thumb}<span>${esc(c.name)}</span><small>${count}</small></button>`;
+    const thumb = c.thumb ? `<img src="${esc(c.thumb)}" alt="">` : `<span class="fcat__ph">${esc(c.name.replace(/^ال/, "").charAt(0))}</span>`;
+    return `<button type="button" class="fcat ${F.cats.has(c.id) ? "is-on" : ""}" data-fcat="${esc(c.id)}">${thumb}<span>${esc(c.name)}</span><small>${c.count}</small></button>`;
   }).join("");
   $("#fBrands").innerHTML = B.filter(brandCount).map(b => `<button type="button" class="fcat fcat--brand ${F.brands.has(b.id) ? "is-on" : ""}" data-fbrand="${esc(b.id)}">${logoBox(b, "logo--sm")}<span>${esc(b.name)}</span><small>${brandCount(b)}</small></button>`).join("");
   wireLogos($("#fBrands"));
-  const r = $("#fPrice"); r.min = minPrice(); r.max = maxPrice(); r.value = F.price;
+  const r = $("#fPrice"); r.min = S.priceMin; r.max = S.priceMax; r.value = F.price;
   $("#fPriceOut").innerHTML = money(+r.value);
   $("#fStock").checked = F.stock; $("#fFav").checked = F.fav; $("#sort").value = F.sort; $("#shopQ").value = F.q;
 }
-function renderShop() {
+
+const shopParams = () => ({
+  cat: [...F.cats].join(","), brand: [...F.brands].join(","), q: F.q.trim(),
+  max: F.price < S.priceMax ? F.price : "", in_stock: F.stock ? 1 : "", sort: F.sort
+});
+/** Favourites are few, so they are loaded by id and filtered here. */
+function favouritesMatching() {
   const q = F.q.trim().toLowerCase();
-  const list = P.filter(p =>
+  const sorters = { low: (a, b) => a.price - b.price, high: (a, b) => b.price - a.price };
+  const list = [...favs].map(byId).filter(p => p &&
     (!F.cats.size || F.cats.has(p.cat)) && (!F.brands.size || F.brands.has(p.brand)) && p.price <= F.price &&
-    (!F.stock || p.stock > 0) && (!F.fav || favs.has(p.id)) && (!q || p.search.includes(q)));
-  const sorters = { low: (a, b) => a.price - b.price, high: (a, b) => b.price - a.price, feat: (a, b) => b.stock - a.stock };
-  list.sort(sorters[F.sort] || sorters.feat);
-  $("#shopGrid").innerHTML = list.map(card).join("");
-  $("#shopEmpty").hidden = list.length > 0;
+    (!F.stock || inStock(p)) && (!q || `${p.name} ${p.sku}`.toLowerCase().includes(q)));
+  return sorters[F.sort] ? list.sort(sorters[F.sort]) : list;
+}
+
+/** Load the first page (or, with more=true, the next page) of the current filters. */
+async function renderShop(more = false) {
+  const seq = ++shop.seq, grid = $("#shopGrid"), moreBtn = $("#shopMore");
+  renderShopHeader();
+  grid.classList.toggle("is-loading", !more); moreBtn.disabled = true;
+  let list;
+  try {
+    if (F.fav) {
+      await ensureProducts([...favs]);
+      list = favouritesMatching();
+      Object.assign(shop, { page: 1, lastPage: 1, total: list.length });
+    } else {
+      const r = await fetchProducts({ ...shopParams(), page: more ? shop.page + 1 : 1 });
+      if (seq !== shop.seq) return;                     // a newer filter change replaced this request
+      list = r.data;
+      Object.assign(shop, { page: r.meta.page, lastPage: r.meta.last_page, total: r.meta.total });
+    }
+  } catch (err) {
+    if (seq === shop.seq) { grid.classList.remove("is-loading"); moreBtn.disabled = false; toast(`<span>${esc(err.message)}</span>`); }
+    return;
+  }
+  if (seq !== shop.seq) return;
+  const html = list.map(card).join("");
+  if (more) grid.insertAdjacentHTML("beforeend", html); else grid.innerHTML = html;
+  grid.classList.remove("is-loading");
+  moreBtn.hidden = shop.page >= shop.lastPage; moreBtn.disabled = false;
+  $("#shopCount").textContent = t("results_n", { n: shop.total.toLocaleString("en-US") });
+
   const oneCat = F.cats.size === 1 && !F.q && !F.fav ? catById([...F.cats][0]) : null;
-  const catEmpty = oneCat && !P.some(p => p.cat === oneCat.id);
+  const catEmpty = oneCat && !oneCat.count;
+  $("#shopEmpty").hidden = shop.total > 0;
   $("#shopEmpty h3").textContent = catEmpty ? t("empty_cat_t", { name: oneCat.name }) : t("empty_t");
   $("#shopEmpty p").textContent = catEmpty ? t("empty_cat_p") : t("empty_p");
   $("#emptyWa").hidden = !catEmpty;
   if (catEmpty) $("#emptyWa").href = waUrl(t("wa_ask_category", { name: oneCat.name }));
-  $("#shopCount").textContent = t("results_n", { n: list.length });
+  observe();
+}
+
+/** Title and active-filter chips (no request needed). */
+function renderShopHeader() {
+  const q = F.q.trim();
   $("#shopTitle").textContent = F.fav ? t("favourites")
     : q ? t("search_for", { q: F.q })
     : F.cats.size === 1 ? (catById([...F.cats][0])?.name || t("all_products"))
@@ -290,24 +357,35 @@ function renderShop() {
   F.cats.forEach(id => chips.push(`<button class="chip" data-chip="cat:${esc(id)}">${esc(catById(id)?.name || id)}</button>`));
   F.brands.forEach(id => chips.push(`<button class="chip" data-chip="brand:${esc(id)}">${esc(brandById(id)?.name || id)}</button>`));
   if (F.q) chips.push(`<button class="chip" data-chip="q">“${esc(F.q)}”</button>`);
-  if (F.price < maxPrice()) chips.push(`<button class="chip" data-chip="price">≤ ${esc(moneyTxt(F.price))}</button>`);
+  if (F.price < S.priceMax) chips.push(`<button class="chip" data-chip="price">≤ ${esc(moneyTxt(F.price))}</button>`);
   if (F.stock) chips.push(`<button class="chip" data-chip="stock">${t("in_stock_only")}</button>`);
   if (F.fav) chips.push(`<button class="chip" data-chip="fav">${t("fav_only")}</button>`);
   $("#activeChips").innerHTML = chips.join("");
-  observe();
 }
-function resetFilters() { F.cats.clear(); F.brands.clear(); F.price = maxPrice(); F.stock = F.fav = false; F.q = ""; renderFilters(); renderShop(); }
+function resetFilters() { F.cats.clear(); F.brands.clear(); F.price = S.priceMax; F.stock = F.fav = false; F.q = ""; renderFilters(); renderShop(); }
 
 /* ---------- product page ---------- */
 const isCutout = src => /\.png($|\?)/i.test(src);
+let pdpSeq = 0;
+/** Show a product: from the cache when its details are already loaded, otherwise from the server. */
+async function openProduct(id) {
+  const seq = ++pdpSeq, cached = byId(id);
+  if (cached?.specs) { renderPDP(cached); return; }
+  $("#pdp").innerHTML = "";
+  try {
+    const p = await fetchProduct(id);
+    if (seq === pdpSeq && current === "product") renderPDP(p);
+  } catch {
+    if (seq === pdpSeq) location.hash = "shop";       // unknown or hidden product
+  }
+}
 function renderPDP(p) {
   const specs = [
     [t("sku"), p.sku, true],
     p.brandName ? [t("brand"), p.brandName, true] : null,
     ...p.specs.map(s => [s.label, s.value, s.ltr])
   ].filter(Boolean);
-  const pairs = p.pairs.map(byId).filter(Boolean);
-  const related = P.filter(x => x.id !== p.id && (x.cat === p.cat || pairs.includes(x))).slice(0, 4);
+  const pairs = p.pairs, related = p.related;
   const images = p.images.length ? p.images : [imgOf(p)];
   const series = [p.brandName, p.series].filter(Boolean).map(esc).join(" · ");
   $("#pdp").innerHTML = `
@@ -324,15 +402,15 @@ function renderPDP(p) {
       <span class="info__series">${series}</span>
       <h1>${esc(p.name)}</h1>
       <p class="info__short">${esc(p.short || "")}</p>
-      <div class="info__price"><div><span class="price">${money(p.price)}</span><small class="vat">${t("vat")}</small></div><span style="margin-inline-start:auto">${stockBadge(p)}</span></div>
+      <div class="info__price"><div><span class="price">${priceOf(p)}</span><small class="vat">${t("vat")}</small></div><span style="margin-inline-start:auto">${stockBadge(p)}</span></div>
       <div class="buy">
-        <div class="qty" data-qty-wrap><button type="button" data-qd="-1" aria-label="-">−</button><input id="pdpQty" type="number" min="1" max="${Math.max(1, p.stock)}" value="1" inputmode="numeric"><button type="button" data-qd="1" aria-label="+">+</button></div>
-        <button class="btn btn--primary btn--lg" type="button" data-add="${esc(p.id)}" data-from-pdp ${p.stock <= 0 ? "disabled" : ""}>${t("add")}</button>
-        <button class="btn btn--dark btn--lg" type="button" data-buynow="${esc(p.id)}" ${p.stock <= 0 ? "disabled" : ""}>${t("buy_now")}</button>
+        <div class="qty" data-qty-wrap><button type="button" data-qd="-1" aria-label="-">−</button><input id="pdpQty" type="number" min="1" max="${Math.max(1, maxQty(p))}" value="1" inputmode="numeric"><button type="button" data-qd="1" aria-label="+">+</button></div>
+        <button class="btn btn--primary btn--lg" type="button" data-add="${esc(p.id)}" data-from-pdp ${inStock(p) ? "" : "disabled"}>${t("add")}</button>
+        <button class="btn btn--dark btn--lg" type="button" data-buynow="${esc(p.id)}" ${inStock(p) ? "" : "disabled"}>${t("buy_now")}</button>
       </div>
       ${ASSURANCES.length ? `<div class="assure">${ASSURANCES.map(a => `<div><b>${esc(a.title)}</b>${esc(a.text || "")}</div>`).join("")}</div>` : ""}
       <div class="specs"><h3>${t("specs_t")}</h3><table>${specs.map(([label, value, ltr]) => `<tr><th>${esc(label)}</th><td>${ltr ? `<span dir="ltr">${esc(value)}</span>` : esc(value)}</td></tr>`).join("")}</table></div>
-      ${pairs.length ? `<div class="pairs"><h4>${t("pairs_t")}</h4>${pairs.map(x => `<div class="pair"><img src="${esc(imgOf(x))}" alt=""><div><b>${esc(x.name)}</b><small>${esc(x.short || "")}</small></div><button class="add" type="button" data-add="${esc(x.id)}" ${x.stock <= 0 ? "disabled" : ""}>+ ${money(x.price)}</button></div>`).join('<div style="height:10px"></div>')}</div>` : ""}
+      ${pairs.length ? `<div class="pairs"><h4>${t("pairs_t")}</h4>${pairs.map(x => `<div class="pair"><img src="${esc(imgOf(x))}" alt=""><div><b>${esc(x.name)}</b><small>${esc(x.short || "")}</small></div><button class="add" type="button" data-add="${esc(x.id)}" ${inStock(x) ? "" : "disabled"}>+ ${priceOf(x)}</button></div>`).join('<div style="height:10px"></div>')}</div>` : ""}
       <p style="margin-top:22px"><a class="link-arrow" target="_blank" rel="noopener" href="${esc(waUrl(t("wa_ask_product", { sku: p.sku })))}">${t("ask_wa")}</a></p>
     </div>
   </div>
@@ -342,26 +420,26 @@ function renderPDP(p) {
 
 /* ---------- cart ---------- */
 function addToCart(id, qty = 1, srcImg) {
-  const p = byId(id); if (!p || p.stock <= 0) return;
+  const p = byId(id); if (!p || !inStock(p)) return;
   const line = cart.find(i => i.id === id);
-  if (line) line.qty = Math.min(p.stock, line.qty + qty); else cart.push({ id, qty: Math.min(p.stock, qty) });
+  if (line) line.qty = Math.min(maxQty(p), line.qty + qty); else cart.push({ id, qty: Math.min(maxQty(p), qty) });
   saveCart(); renderCart();
   if (srcImg) flyToCart(srcImg);
   toast(`<img src="${esc(imgOf(p))}" alt=""><span>${t("added_toast")}</span><a href="#" data-open-cart>${t("view_cart")}</a>`);
 }
 function setQty(id, q) {
-  const p = byId(id), line = cart.find(i => i.id === id); if (!line) return;
-  line.qty = Math.max(1, Math.min(p.stock, q)); saveCart(); renderCart(); if (current === "checkout") renderCheckout();
+  const p = byId(id), line = cart.find(i => i.id === id); if (!line || !p) return;
+  line.qty = Math.max(1, Math.min(maxQty(p), q)); saveCart(); renderCart(); if (current === "checkout") renderCheckout();
 }
 function removeLine(id) { cart = cart.filter(i => i.id !== id); saveCart(); renderCart(); if (current === "checkout") renderCheckout(); }
 function renderCart() {
   const sub = cartSub(), empty = !cart.length;
   $("#cartEmpty").hidden = !empty; $("#cartFoot").hidden = empty; $("#shipBar").hidden = empty || S.freeDeliveryFrom <= 0;
-  $("#cartItems").innerHTML = cart.map(i => { const p = byId(i.id); return `<li class="ci" data-line="${esc(p.id)}">
+  $("#cartItems").innerHTML = cartLines().map(({ p, qty }) => `<li class="ci" data-line="${esc(p.id)}">
     <img src="${esc(imgOf(p))}" alt=""><div><b>${esc(p.name)}</b><small dir="ltr">${esc(p.sku)}</small>
-    <div class="ci__row"><div class="qty qty--sm"><button type="button" data-cq="${esc(p.id)}" data-d="-1">−</button><input value="${i.qty}" data-cqi="${esc(p.id)}" inputmode="numeric" aria-label="qty"><button type="button" data-cq="${esc(p.id)}" data-d="1">+</button></div>
+    <div class="ci__row"><div class="qty qty--sm"><button type="button" data-cq="${esc(p.id)}" data-d="-1">−</button><input value="${qty}" data-cqi="${esc(p.id)}" inputmode="numeric" aria-label="qty"><button type="button" data-cq="${esc(p.id)}" data-d="1">+</button></div>
     <button class="ci__rm" type="button" data-rm="${esc(p.id)}">${t("remove")}</button></div></div>
-    <span class="price">${money(p.price * i.qty)}</span></li>`; }).join("");
+    <span class="price">${priceOf(p, p.price * qty)}</span></li>`).join("");
   $$("[data-cart-sub]").forEach(e => e.innerHTML = money(sub));
   if (S.freeDeliveryFrom > 0) {
     const left = S.freeDeliveryFrom - sub;
@@ -403,7 +481,7 @@ function renderCheckout() {
   const sub = cartSub(), d = fee(), free = freeDelivery(sub);
   $("#coItems").innerHTML = !cart.length
     ? `<li style="display:block;color:var(--muted)">${t("co_empty")}</li>`
-    : cart.map(i => { const p = byId(i.id); return `<li><span class="th"><img src="${esc(imgOf(p))}" alt=""><i>${i.qty}</i></span><b>${esc(p.name)}</b><span class="price">${money(p.price * i.qty)}</span></li>`; }).join("");
+    : cartLines().map(({ p, qty }) => `<li><span class="th"><img src="${esc(imgOf(p))}" alt=""><i>${qty}</i></span><b>${esc(p.name)}</b><span class="price">${money(p.price * qty)}</span></li>`).join("");
   $("#areas").innerHTML = S.areas.map(a => `<label class="area"><input type="radio" name="area" value="${a.id}" ${a.id === area ? "checked" : ""}><span><b>${esc(a.name)}</b><i>${free ? t("free") : esc(moneyTxt(a.fee))}</i></span></label>`).join("");
   $$("[data-co-sub]").forEach(e => e.innerHTML = money(sub));
   $$("[data-co-del]").forEach(e => e.innerHTML = d ? money(d) : `<span style="color:var(--ok)">${t("free")}</span>`);
@@ -554,12 +632,19 @@ function renderAccount() {
     $("#addrAreas").innerHTML = S.areas.map((a, i) => `<label class="area"><input type="radio" name="area_id" value="${a.id}" ${i ? "" : "checked"}><span><b>${esc(a.name)}</b></span></label>`).join("");
   }
 
-  const favList = P.filter(p => favs.has(p.id));
-  $("#accFavourites").innerHTML = favList.length ? favList.map(card).join("") : `<p class="acc__empty">${t("acc_no_favourites")}</p>`;
+  renderAccountFavourites();
 
   const profile = $("#profileForm");
   if (!profile.dataset.filled) { fe(profile, "name").value = me.customer.name; profile.dataset.filled = 1; }
   observe();
+}
+function renderAccountFavourites() {
+  const ids = [...favs], list = ids.map(byId).filter(Boolean);
+  $("#accFavourites").innerHTML = list.length ? list.map(card).join("") : `<p class="acc__empty">${t("acc_no_favourites")}</p>`;
+  // Load favourites that are not cached yet, then render once more (only if that filled the gap).
+  if (list.length < ids.length) {
+    ensureProducts(ids).then(ok => { if (ok && current === "account" && ids.map(byId).filter(Boolean).length > list.length) renderAccountFavourites(); });
+  }
 }
 function editAddress(id) {
   const f = $("#addressForm"), a = me.addresses.find(x => x.id === id);
@@ -603,11 +688,14 @@ async function logout() {
 }
 
 /* ---------- search ---------- */
-let sugIdx = -1;
-function suggest(q) {
-  const d = $("#searchDrop"); q = q.trim().toLowerCase();
-  if (!q) { d.classList.remove("is-open"); return; }
-  const hits = P.filter(p => p.search.includes(q)).slice(0, 5);
+let sugIdx = -1, sugSeq = 0;
+const suggestSoon = debounce(q => suggest(q), 200);
+async function suggest(q) {
+  const d = $("#searchDrop"), seq = ++sugSeq; q = q.trim();
+  if (q.length < 2) { d.classList.remove("is-open"); return; }
+  let hits;
+  try { hits = (await fetchProducts({ q, per_page: 5 })).data; } catch { return; }
+  if (seq !== sugSeq) return;                         // the customer kept typing
   sugIdx = -1;
   d.innerHTML = hits.length
     ? hits.map(p => `<a class="sug" href="#p-${esc(p.id)}"><img src="${esc(imgOf(p))}" alt=""><span><b>${esc(p.name)}</b><small>${[p.sku, p.series].filter(Boolean).map(esc).join(" · ")}</small></span><em>${esc(moneyTxt(p.price))}</em></a>`).join("")
@@ -627,7 +715,7 @@ function route() {
     if (h.startsWith("brand-")) { F.brands = new Set([h.slice(6)]); F.cats.clear(); F.fav = false; }
     if (h === "favourites") { F.fav = true; F.cats.clear(); }
     renderFilters(); renderShop();
-  } else if (h.startsWith("p-") && byId(h.slice(2))) { view = "product"; renderPDP(byId(h.slice(2))); }
+  } else if (h.startsWith("p-")) { view = "product"; openProduct(h.slice(2)); }
   else if (h === "checkout") { view = "checkout"; renderCheckout(); }
   else if (h === "done") { view = "done"; renderDone(); }
   else if (h === "account") { view = "account"; renderAccount(); }
@@ -706,7 +794,7 @@ document.addEventListener("click", e => {
   else if (d.fcat) { F.cats.has(d.fcat) ? F.cats.delete(d.fcat) : F.cats.add(d.fcat); renderFilters(); renderShop(); }
   else if (d.chip) {
     const [k, v] = d.chip.split(":");
-    if (k === "cat") F.cats.delete(v); if (k === "brand") F.brands.delete(v); if (k === "q") F.q = ""; if (k === "price") F.price = maxPrice(); if (k === "stock") F.stock = false; if (k === "fav") F.fav = false;
+    if (k === "cat") F.cats.delete(v); if (k === "brand") F.brands.delete(v); if (k === "q") F.q = ""; if (k === "price") F.price = S.priceMax; if (k === "stock") F.stock = false; if (k === "fav") F.fav = false;
     renderFilters(); renderShop();
   }
   else if (d.thumb != null) {
@@ -749,9 +837,9 @@ $("#scrim").addEventListener("click", () => { closeCart(); closeFilters(); });
 document.addEventListener("keydown", e => { if (e.key === "Escape") { closeCart(); closeFilters(); $(".lightbox")?.remove(); $("#searchDrop").classList.remove("is-open"); } });
 document.addEventListener("input", e => {
   const el = e.target;
-  if (el.id === "fPrice") { F.price = +el.value; $("#fPriceOut").innerHTML = money(F.price); renderShop(); }
-  else if (el.id === "shopQ") { F.q = el.value; renderShop(); }
-  else if (el.id === "q") suggest(el.value);
+  if (el.id === "fPrice") { F.price = +el.value; $("#fPriceOut").innerHTML = money(F.price); renderShopHeader(); renderShopSoon(); }
+  else if (el.id === "shopQ") { F.q = el.value; renderShopHeader(); renderShopSoon(); }
+  else if (el.id === "q") suggestSoon(el.value);
   else if (el.closest("#loginForm") && el.name === "phone") $("[data-forgot]").href = waUrl(t("acc_forgot_wa", { phone: el.value.trim() || "—" }));
   else if (el.dataset.cqi) { const v = parseInt(el.value); if (v > 0) setQty(el.dataset.cqi, v); }
   else if (el.closest("#coForm label.bad")) el.closest("label").classList.remove("bad");
@@ -806,6 +894,7 @@ $("#addressForm").addEventListener("reset", e => {
   $("[data-address-title]", e.target).textContent = t("acc_add_address");
   formErrors(e.target, null);
 });
+$("#shopMore").addEventListener("click", () => renderShop(true));
 $("#emptyReset").addEventListener("click", resetFilters);
 $("#fReset").addEventListener("click", resetFilters);
 $("#bulkForm")?.addEventListener("submit", e => {
@@ -821,8 +910,17 @@ addEventListener("scroll", () => $("#hdr").classList.toggle("is-stuck", scrollY 
 addEventListener("hashchange", route);
 
 /* ---------- boot ---------- */
-F.price = maxPrice();
 renderHome(); renderCart(); paintCounts(); paintAccountButton();
-if (me && favs.size !== me.favourites.length) saveFavs();   // push favourites collected before signing in
 route(); heroMotion(); observe();
+
+// Cart and favourites are stored as ids: load their products, then drop the ones no longer sold.
+ensureProducts([...cart.map(i => i.id), ...favs]).then(ok => {
+  if (!ok) return;                                  // request failed: keep everything as it is
+  cart = cart.filter(i => byId(i.id));
+  favs = new Set([...favs].filter(byId));
+  saveCart(); store.set("favs", [...favs]);
+  if (me && favs.size !== me.favourites.length) saveFavs();   // push favourites collected before signing in
+  renderCart(); paintCounts();
+  if (current === "checkout") renderCheckout();
+});
 })();

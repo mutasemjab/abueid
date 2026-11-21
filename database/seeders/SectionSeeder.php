@@ -49,7 +49,7 @@ class SectionSeeder extends Seeder
                     'secondary_button' => $this->t('أقرب فرع إلك', 'Find a branch'),
                 ],
                 'items' => [
-                    ['value' => '6', 'suffix' => $this->t(null, null), 'label' => $this->t('أقسام رئيسية', 'main departments')],
+                    ['value' => '35', 'suffix' => $this->t(null, null), 'label' => $this->t('أقسام رئيسية', 'main departments')],
                     ['value' => '24', 'suffix' => $this->t('س', 'h'), 'label' => $this->t('توصيل داخل عمّان', 'delivery in Amman')],
                     ['value' => '100', 'suffix' => $this->t('%', '%'), 'label' => $this->t('منتج أصلي', 'genuine parts')],
                 ],

@@ -83,9 +83,8 @@ class OrderService
     private function availableProducts(array $slugs): Collection
     {
         $products = Product::query()
-            ->active()
+            ->sellable()
             ->whereIn('slug', $slugs)
-            ->whereHas('category', fn ($query) => $query->active())
             ->with('images')
             ->lockForUpdate()
             ->get();
@@ -99,7 +98,7 @@ class OrderService
 
     private function ensureStock(Collection $products, Collection $quantities): void
     {
-        $short = $products->first(fn (Product $product) => $quantities[$product->slug] > $product->stock);
+        $short = $products->first(fn (Product $product) => $product->tracksStock() && $quantities[$product->slug] > $product->stock);
 
         if ($short) {
             throw ValidationException::withMessages([

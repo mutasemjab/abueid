@@ -737,3 +737,9 @@ html[dir=rtl] .toast{padding:8px 8px 8px 18px}
 .hbtn.is-on{border-color:var(--ink);background:var(--paper-2)}
 @media (max-width:980px){.acc--guest,.acc__cols{grid-template-columns:1fr}}
 @media (max-width:720px){.co__saved{grid-template-columns:1fr}.order__head .price{margin-inline-start:0}}
+
+/* ---------- large catalogue ---------- */
+.grid.is-loading{opacity:.45;pointer-events:none;transition:opacity .2s}
+.shop__more{display:flex;justify-content:center;margin:28px 0 10px}
+.shop__more .btn{min-width:220px}
+.price .unit{font-size:.62em;color:var(--muted);font-weight:500}

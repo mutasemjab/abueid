@@ -59,6 +59,7 @@ return [
     'results_n'     => ':n منتج|:n منتجات',
     'favourites'    => 'المفضلة',
     'search_for'    => 'نتائج «:q»',
+    'load_more'     => 'عرض المزيد',
 
     // Product
     'add'         => 'أضف للسلة',

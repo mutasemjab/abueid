@@ -20,7 +20,7 @@
           <h4>{{ __('front.price') }}</h4>
           <div class="price-in">
             <label><span>{{ __('front.up_to') }}</span> <output id="fPriceOut"></output></label>
-            <input type="range" id="fPrice" min="0" max="0" step="0.5">
+            <input type="range" id="fPrice" min="0" max="0" step="1">
           </div>
         </div>
         <div class="fgroup">
@@ -43,7 +43,8 @@
           </label>
         </div>
         <div class="chips" id="activeChips"></div>
-        <div class="grid grid--shop" id="shopGrid"></div>
+        <div class="grid grid--shop" id="shopGrid" aria-live="polite"></div>
+        <div class="shop__more"><button type="button" class="btn btn--line" id="shopMore" hidden>{{ __('front.load_more') }}</button></div>
         <div class="empty" id="shopEmpty" hidden>
           @if ($image = $settings->imageUrl('empty_state_image'))
             <img src="{{ $image }}" alt="">

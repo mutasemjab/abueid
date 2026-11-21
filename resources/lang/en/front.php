@@ -59,6 +59,7 @@ return [
     'results_n'     => ':n product|:n products',
     'favourites'    => 'Favourites',
     'search_for'    => 'Results for “:q”',
+    'load_more'     => 'Load more',
 
     // Product
     'add'         => 'Add to cart',

@@ -44,6 +44,7 @@ Route::group([
             ->name('permissions.index');
 
         // ── Store ─────────────────────────────────────────────────────
+        Route::get('products/search', [ProductController::class, 'search'])->name('products.search');
         Route::resource('products', ProductController::class)->except(['show']);
         Route::resource('categories', CategoryController::class)->except(['show']);
         Route::resource('brands', BrandController::class)->except(['show']);
