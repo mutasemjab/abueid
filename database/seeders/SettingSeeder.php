@@ -24,6 +24,7 @@ class SettingSeeder extends Seeder
             // Contact
             'whatsapp' => '962790000000',
             'phone' => '079 000 0000',
+            'email' => null, // set the real address from Settings › Contact
             'facebook_url' => null,
             'instagram_url' => null,
 

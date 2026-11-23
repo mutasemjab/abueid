@@ -60,6 +60,10 @@ return [
     'favourites'    => 'المفضلة',
     'search_for'    => 'نتائج «:q»',
     'load_more'     => 'عرض المزيد',
+    'arrow'         => '←',
+    'contact_phone' => 'اتصل بنا',
+    'contact_email' => 'راسلنا على الإيميل',
+    'wa_float'      => 'تواصل معنا على واتساب',
 
     // Product
     'add'         => 'أضف للسلة',

@@ -49,7 +49,7 @@ class StorefrontPayload
     }
 
     /**
-     * Sellable product counts per category / brand, first photo per category and the price range.
+     * Sellable product counts per category / brand and the price range.
      */
     private function catalogStats(): array
     {
@@ -57,19 +57,12 @@ class StorefrontPayload
 
         $range = $sellable()->selectRaw('count(*) as total, min(price) as min_price, max(price) as max_price')->first();
 
-        $thumbs = $sellable()
-            ->join('product_images', 'product_images.product_id', '=', 'products.id')
-            ->groupBy('products.category_id')
-            ->selectRaw('products.category_id, min(product_images.path) as path')
-            ->pluck('path', 'category_id');
-
         return [
             'total' => (int) $range->total,
             'min' => (float) $range->min_price,
             'max' => (float) $range->max_price,
             'categories' => $sellable()->groupBy('category_id')->selectRaw('category_id, count(*) as n')->pluck('n', 'category_id'),
             'brands' => $sellable()->whereNotNull('brand_id')->groupBy('brand_id')->selectRaw('brand_id, count(*) as n')->pluck('n', 'brand_id'),
-            'thumbs' => $thumbs,
         ];
     }
 
@@ -123,7 +116,6 @@ class StorefrontPayload
             'blurb' => $category->blurb,
             'subs' => array_slice($category->subcategoryList(), 0, 8),
             'img' => media_url($category->image),
-            'thumb' => media_url($stats['thumbs'][$category->id] ?? null),
             'count' => (int) ($stats['categories'][$category->id] ?? 0),
             'ghost' => Str::before((string) $category->getTranslation('name', 'en'), ' '),
         ];

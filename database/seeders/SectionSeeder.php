@@ -61,6 +61,8 @@ class SectionSeeder extends Seeder
                     'menu_label' => $this->t('الأقسام', 'Categories'),
                     'title' => $this->t('تسوّق حسب القسم', 'Shop by category'),
                     'link_label' => $this->t('كل المنتجات', 'All products'),
+                    'cards_count' => 8,
+                    'more_label' => $this->t('عرض المزيد', 'View more'),
                 ],
             ],
             [
@@ -197,6 +199,7 @@ class SectionSeeder extends Seeder
                     'delivery_note' => $this->t('التوصيل: 1–3 أيام عمل', 'Delivery: 1–3 working days'),
                     'copyright' => $this->t('أبو عيد للأدوات الكهربائية والإنارة', 'Abu Eid Electrical & Lighting Supplies'),
                     'trademark_note' => $this->t('Schneider Electric علامة تجارية لمالكها.', 'Schneider Electric is a trademark of its owner.'),
+                    'categories_count' => 4,
                 ],
             ],
         ];

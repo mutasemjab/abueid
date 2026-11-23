@@ -2,7 +2,7 @@
   <div class="wrap hdr__in">
     <a href="#home" class="brand" aria-label="{{ $settings->get('site_name') }}">
       @if ($logo = $settings->imageUrl('logo'))
-        <img src="{{ $logo }}" alt="{{ $settings->get('site_name') }}" width="140" height="46">
+        <img src="{{ $logo }}" alt="{{ $settings->get('site_name') }}" width="168" height="56">
       @endif
       <span class="brand__sub">{{ $settings->get('tagline') }}</span>
     </a>

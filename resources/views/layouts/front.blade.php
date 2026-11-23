@@ -31,6 +31,7 @@
     @include('front.partials.footer')
     @include('front.partials.cart-drawer')
     @include('front.partials.mobile-bar')
+    @include('front.partials.whatsapp-float')
 
     <div class="toasts" id="toasts" aria-live="polite"></div>
 

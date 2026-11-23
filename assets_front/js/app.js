@@ -146,19 +146,18 @@ function renderHome() {
   renderBranches();
 }
 
+/* Home category tiles: the first N categories (N from the dashboard). A tile shows the photo
+   uploaded for its category; without one it is a typographic tile with its sub-categories. */
 function renderCategories() {
   const grid = $("#catGrid"); if (!grid) return;
-  grid.innerHTML = C.map((c, i) => {
-    const n = c.count, prod = c.thumb;
-    return `<a class="cat ${prod ? "" : "cat--type"} reveal" style="--i:${i % 3}" href="#cat-${esc(c.id)}" data-catimg="${esc(c.img || "")}">
+  const limit = +grid.dataset.limit || 8;
+  grid.innerHTML = C.slice(0, limit).map((c, i) => `<a class="cat cat--type reveal" style="--i:${i % 4}" href="#cat-${esc(c.id)}" data-catimg="${esc(c.img || "")}">
       <span class="cat__no">${String(i + 1).padStart(2, "0")}</span>
       <h3>${esc(c.name)}</h3><p>${esc(c.blurb || "")}</p>
-      ${prod ? "" : `<span class="cat__subs">${c.subs.map(x => `<span>${esc(x)}</span>`).join("")}</span>`}
-      ${prod ? "" : `<span class="cat__ghost">${esc(c.ghost)}</span>`}
-      <span class="cat__n">${n ? `${n} ${t("items")} →` : t("ask_avail")}</span>
-      ${prod ? `<img class="cat__prod" src="${esc(prod)}" alt="" loading="lazy">` : ""}
-    </a>`;
-  }).join("");
+      <span class="cat__subs">${c.subs.slice(0, 4).map(x => `<span>${esc(x)}</span>`).join("")}</span>
+      <span class="cat__ghost">${esc(c.ghost)}</span>
+      <span class="cat__n">${c.count ? `${c.count.toLocaleString("en-US")} ${t("items")} ${t("arrow")}` : t("ask_avail")}</span>
+    </a>`).join("");
   $$("[data-catimg]", grid).forEach(tile => {
     const src = tile.dataset.catimg; if (!src) return;
     const im = new Image();
@@ -283,7 +282,7 @@ const renderShopSoon = debounce(() => renderShop(), 250);
 
 function renderFilters() {
   $("#fCats").innerHTML = C.map(c => {
-    const thumb = c.thumb ? `<img src="${esc(c.thumb)}" alt="">` : `<span class="fcat__ph">${esc(c.name.replace(/^ال/, "").charAt(0))}</span>`;
+    const thumb = c.img ? `<img src="${esc(c.img)}" alt="">` : `<span class="fcat__ph">${esc(c.name.replace(/^ال/, "").charAt(0))}</span>`;
     return `<button type="button" class="fcat ${F.cats.has(c.id) ? "is-on" : ""}" data-fcat="${esc(c.id)}">${thumb}<span>${esc(c.name)}</span><small>${c.count}</small></button>`;
   }).join("");
   $("#fBrands").innerHTML = B.filter(brandCount).map(b => `<button type="button" class="fcat fcat--brand ${F.brands.has(b.id) ? "is-on" : ""}" data-fbrand="${esc(b.id)}">${logoBox(b, "logo--sm")}<span>${esc(b.name)}</span><small>${brandCount(b)}</small></button>`).join("");
@@ -478,6 +477,8 @@ let area = S.areas.some(a => a.id === store.get("area", null)) ? store.get("area
 const currentArea = () => S.areas.find(a => a.id === area) || S.areas[0];
 const fee = () => { const a = currentArea(); return !a || freeDelivery(cartSub()) ? 0 : a.fee; };
 function renderCheckout() {
+  const f = $("#coForm");
+  if (!f.dataset.filled) prefillCheckout(f);         // once per page / per sign-in, before anything is drawn
   const sub = cartSub(), d = fee(), free = freeDelivery(sub);
   $("#coItems").innerHTML = !cart.length
     ? `<li style="display:block;color:var(--muted)">${t("co_empty")}</li>`
@@ -492,8 +493,25 @@ function renderCheckout() {
 
 /* Checkout parts that depend on the account: prefill, saved addresses, "open an account". */
 let savedPick = null;
+
+/** Fill the form from the account (or the last guest order) and pick the default saved address. */
+function prefillCheckout(f) {
+  f.dataset.filled = 1;
+  const saved = me ? me.customer : store.get("customer", null);
+  if (saved) ["name", "phone", "address"].forEach(k => { if (saved[k] && !fe(f, k).value) fe(f, k).value = saved[k]; });
+  const list = me?.addresses || [];
+  const preferred = list.find(a => a.default) || list[0];
+  if (preferred) applySavedAddress(preferred);
+}
+
+/** Use a saved address for this order (does not render). */
+function applySavedAddress(a) {
+  savedPick = a.id;
+  fe($("#coForm"), "address").value = a.address;
+  if (S.areas.some(x => x.id === a.area_id)) { area = a.area_id; store.set("area", area); }
+}
+
 function renderCheckoutAccount() {
-  const f = $("#coForm");
   $("#coAccount").innerHTML = me
     ? t("co_logged_as", { name: esc(me.customer.name) })
     : `${t("co_have_account")} <a href="#account" data-login-return="checkout">${t("co_login_link")}</a>`;
@@ -503,20 +521,6 @@ function renderCheckoutAccount() {
   const box = $("#coSaved");
   box.hidden = !list.length;
   box.innerHTML = list.length ? `<p>${t("co_saved_addresses")}</p>` + list.map(a => `<label class="area"><input type="radio" name="saved" value="${a.id}" ${a.id === savedPick ? "checked" : ""}><span><b>${esc(a.area || "")}</b><i>${esc(a.address)}</i></span></label>`).join("") : "";
-
-  if (f.dataset.filled) return;
-  const saved = me ? { ...me.customer } : store.get("customer", null);
-  if (saved) ["name", "phone", "address"].forEach(k => { if (saved[k] && !fe(f, k).value) fe(f, k).value = saved[k]; });
-  const preferred = list.find(a => a.default) || list[0];
-  if (preferred) useSavedAddress(preferred.id);
-  f.dataset.filled = 1;
-}
-function useSavedAddress(id) {
-  const a = (me?.addresses || []).find(x => x.id === id); if (!a) return;
-  savedPick = id;
-  fe($("#coForm"), "address").value = a.address;
-  if (S.areas.some(x => x.id === a.area_id)) { area = a.area_id; store.set("area", area); }
-  renderCheckout();
 }
 
 const phoneOk = v => /^07[789]\d{7}$/.test(v.replace(/[\s-]/g, "").replace(/^(\+|00)?962/, "0"));
@@ -850,7 +854,10 @@ document.addEventListener("change", e => {
   else if (el.id === "fFav") { F.fav = el.checked; renderShop(); }
   else if (el.id === "sort") { F.sort = el.value; renderShop(); }
   else if (el.name === "area") { area = +el.value; savedPick = null; store.set("area", area); renderCheckout(); }
-  else if (el.name === "saved") { useSavedAddress(+el.value); }
+  else if (el.name === "saved") {
+    const a = (me?.addresses || []).find(x => x.id === +el.value);
+    if (a) { applySavedAddress(a); renderCheckout(); }
+  }
   else if (el.name === "create_account") { $("[data-signup-fields]").hidden = !el.checked; }
 });
 $("#q").addEventListener("keydown", e => {

@@ -136,6 +136,7 @@ final class ContentSchema
             'textarea' => ['string', 'max:5000'],
             'number' => ['numeric'],
             'url' => ['url', 'max:500'],
+            'email' => ['email', 'max:150'],
             default => ['string', 'max:255'],
         };
 

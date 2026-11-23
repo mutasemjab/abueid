@@ -70,6 +70,8 @@ return [
             'menu_label' => $text(true),
             'title' => $text(true),
             'link_label' => $text(),
+            'cards_count' => ['type' => 'number', 'required' => true, 'ltr' => true, 'rules' => ['integer', 'min:1', 'max:60']],
+            'more_label' => $text(true),
         ],
     ],
 
@@ -193,6 +195,7 @@ return [
             'delivery_note' => $text(),
             'copyright' => $text(true),
             'trademark_note' => $text(),
+            'categories_count' => ['type' => 'number', 'required' => true, 'ltr' => true, 'rules' => ['integer', 'min:0', 'max:30']],
         ],
     ],
 

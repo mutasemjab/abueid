@@ -60,6 +60,10 @@ return [
     'favourites'    => 'Favourites',
     'search_for'    => 'Results for “:q”',
     'load_more'     => 'Load more',
+    'arrow'         => '→',
+    'contact_phone' => 'Call us',
+    'contact_email' => 'Email us',
+    'wa_float'      => 'Chat with us on WhatsApp',
 
     // Product
     'add'         => 'Add to cart',

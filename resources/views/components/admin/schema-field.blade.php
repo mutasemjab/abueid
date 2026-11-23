@@ -9,6 +9,7 @@
     $inputType = match ($field['type']) {
         'number'   => 'number',
         'url'      => 'url',
+        'email'    => 'email',
         'textarea' => 'textarea',
         default    => 'text',
     };

@@ -53,6 +53,16 @@ if (! function_exists('input_name')) {
     }
 }
 
+if (! function_exists('tel_href')) {
+    /**
+     * "tel:" link for a displayed phone number ("079 000 0000" -> "tel:0790000000").
+     */
+    function tel_href(string $phone): string
+    {
+        return 'tel:'.preg_replace('/[^\d+]/', '', $phone);
+    }
+}
+
 if (! function_exists('is_rtl')) {
     function is_rtl(?string $locale = null): bool
     {

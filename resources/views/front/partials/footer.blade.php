@@ -2,6 +2,8 @@
   $footer = $storefront->section('footer');
   $whatsapp = $settings->get('whatsapp');
   $phone = $settings->get('phone');
+  $email = $settings->get('email');
+  $categoriesShown = (int) ($footer?->value('categories_count') ?? 4);
   $socials = array_filter([
       'Facebook'  => $settings->get('facebook_url'),
       'Instagram' => $settings->get('instagram_url'),
@@ -20,9 +22,10 @@
     <div>
       <h4>{{ __('front.ftr_shop') }}</h4>
       <ul>
-        @foreach ($storefront->categories() as $category)
+        @foreach ($storefront->categories()->take($categoriesShown) as $category)
           <li><a href="#cat-{{ $category->slug }}">{{ $category->name }}</a></li>
         @endforeach
+        <li><a href="#shop" class="ftr__all">{{ __('front.all_products') }}</a></li>
       </ul>
     </div>
 
@@ -47,9 +50,12 @@
           @endif
           @if ($whatsapp && $phone) · @endif
           @if ($phone)
-            <span dir="ltr">{{ $phone }}</span>
+            <a href="{{ tel_href($phone) }}" dir="ltr">{{ $phone }}</a>
           @endif
         </li>
+        @if ($email)
+          <li><a href="mailto:{{ $email }}" dir="ltr">{{ $email }}</a></li>
+        @endif
         @if ($socials)
           <li>
             @foreach ($socials as $network => $url)

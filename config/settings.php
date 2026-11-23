@@ -27,6 +27,7 @@ return [
         'fields' => [
             'whatsapp' => ['type' => 'text', 'required' => true, 'ltr' => true, 'rules' => ['regex:/^[1-9]\d{7,14}$/']],
             'phone' => ['type' => 'text', 'ltr' => true, 'rules' => ['max:30']],
+            'email' => ['type' => 'email', 'ltr' => true],
             'facebook_url' => ['type' => 'url'],
             'instagram_url' => ['type' => 'url'],
         ],
