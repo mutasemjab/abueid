@@ -18,7 +18,7 @@ class Catalog
     {
         return Product::query()
             ->sellable()
-            ->with(['category:id,slug', 'brand:id,slug,name,is_active', 'images']);
+            ->with(['category:id,slug', 'brand:id,slug,name,is_active', 'images', 'options.values']);
     }
 
     /**

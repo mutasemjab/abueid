@@ -37,6 +37,8 @@ class StoreOrderRequest extends FormRequest
             'items' => ['required', 'array', 'min:1', 'max:50'],
             'items.*.id' => ['required', 'string', 'max:100'],
             'items.*.qty' => ['required', 'integer', 'min:1', 'max:999'],
+            'items.*.options' => ['nullable', 'array', 'max:20'],    // {option id: value id}
+            'items.*.options.*' => ['integer'],
             'create_account' => ['nullable', 'boolean'],
             'password' => [Rule::requiredIf($this->wantsAccount()), 'nullable', 'string', 'min:6', 'max:100'],
         ];

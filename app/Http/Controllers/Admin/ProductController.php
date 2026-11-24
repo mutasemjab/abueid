@@ -71,7 +71,7 @@ class ProductController extends Controller
 
     public function edit(Product $product): View
     {
-        return $this->form($product->load(['images', 'specs', 'pairs']));
+        return $this->form($product->load(['images', 'specs', 'pairs', 'options.values']));
     }
 
     public function update(ProductRequest $request, Product $product): RedirectResponse
@@ -106,13 +106,44 @@ class ProductController extends Controller
     private function save(Product $product, ProductRequest $request): void
     {
         DB::transaction(function () use ($product, $request) {
-            $product->fill($request->safe()->except(['images', 'remove_images', 'specs', 'pairs']))->save();
+            $product->fill($request->safe()->except(['images', 'remove_images', 'specs', 'pairs', 'options']))->save();
 
             $this->removeImages($product, $request->validated('remove_images') ?? []);
             $this->addImages($product, $request->file('images') ?? []);
             $this->syncSpecs($product, $request->validated('specs') ?? []);
+            $this->syncOptions($product, $request->validated('options') ?? []);
             $product->pairs()->sync($request->validated('pairs') ?? []);
         });
+    }
+
+    /**
+     * Update options and values in place (keeping their ids, so items already in customers'
+     * carts stay valid), create the new ones and delete the ones removed from the form.
+     */
+    private function syncOptions(Product $product, array $options): void
+    {
+        $keptOptions = [];
+
+        foreach (array_values($options) as $position => $data) {
+            $option = $product->options()->find($data['id'] ?? null) ?? $product->options()->make();
+            $option->fill(['name' => $data['name'], 'sort_order' => $position])->save();
+            $keptOptions[] = $option->id;
+
+            $keptValues = [];
+            foreach (array_values($data['values']) as $index => $valueData) {
+                $value = $option->values()->find($valueData['id'] ?? null) ?? $option->values()->make();
+                $value->fill([
+                    'label' => $valueData['label'],
+                    'price_delta' => (float) ($valueData['price'] ?? 0),
+                    'sort_order' => $index,
+                ])->save();
+                $keptValues[] = $value->id;
+            }
+
+            $option->values()->whereKeyNot($keptValues)->delete();
+        }
+
+        $product->options()->whereKeyNot($keptOptions)->delete();
     }
 
     private function removeImages(Product $product, array $ids): void

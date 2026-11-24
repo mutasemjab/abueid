@@ -121,6 +121,9 @@ return [
     'too_many'        => 'Too many attempts. Please wait a minute and try again.',
     'session_expired' => 'Your session expired. Refresh the page and try again.',
     'err_stock'     => 'Only :n of “:name” are available.',
+    'err_option'    => 'Choose “:option” for “:name”.',
+    'choose_option' => 'Choose :option',
+    'choose'        => 'Choose',
 
     'payment_methods' => [
         'cod'  => 'Cash on delivery',

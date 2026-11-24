@@ -98,7 +98,8 @@ class StorefrontPayload
             'freeDeliveryFrom' => (float) $this->settings->get('free_delivery_from', 0),
             'since' => $this->settings->get('founded_year') ? (int) $this->settings->get('founded_year') : null,
             'currency' => (string) $this->settings->get('currency', ''),
-            'placeholder' => $this->settings->imageUrl('empty_state_image'),
+            // Shown for products without a photo: the store logo (until a product photo is uploaded).
+            'placeholder' => $this->settings->imageUrl('logo') ?? $this->settings->imageUrl('empty_state_image'),
             'orderUrl' => route('orders.store'),
             'areas' => DeliveryArea::query()->active()->ordered()->get()->map(fn (DeliveryArea $area) => [
                 'id' => $area->id,

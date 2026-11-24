@@ -71,6 +71,11 @@ class Product extends Model
         return $this->hasMany(ProductSpec::class)->orderBy('sort_order')->orderBy('id');
     }
 
+    public function options(): HasMany
+    {
+        return $this->hasMany(ProductOption::class)->orderBy('sort_order')->orderBy('id');
+    }
+
     public function pairs(): BelongsToMany
     {
         return $this->belongsToMany(self::class, 'product_pairs', 'product_id', 'paired_product_id');

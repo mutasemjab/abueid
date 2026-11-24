@@ -31,6 +31,7 @@ class OrderResource extends JsonResource
             'items' => $this->items->map(fn (OrderItem $item) => [
                 'name' => $item->name,
                 'sku' => $item->sku,
+                'options' => $item->optionsText(),
                 'image' => media_url($item->image),
                 'price' => $item->price,
                 'qty' => $item->quantity,

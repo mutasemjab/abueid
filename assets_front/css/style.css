@@ -778,3 +778,29 @@ html[dir=rtl] .toast{padding:8px 8px 8px 18px}
 :root{--hdr:86px}
 .brand img{height:56px}
 @media (max-width:720px){:root{--hdr:68px}.brand img{height:42px}}
+
+/* ---------- products without a photo: the store logo ---------- */
+img.is-ph{object-fit:contain!important;opacity:.8}
+.card__media img.is-ph{inset:34% 16%;width:68%;height:32%}
+.card:hover .card__media img.is-ph{transform:none}
+.gal__main--ph{cursor:default}
+.gal__main img.is-ph{inset:35% 14%;width:72%;height:30%}
+.ci img.is-ph,.pair img.is-ph,.sug img.is-ph,.sumlist img.is-ph{padding:22% 10%}
+.toast img.is-ph{padding:10px 4px}
+
+/* ---------- product options (product page) ---------- */
+.opts{display:grid;gap:16px;margin:4px 0 22px}
+.opt{border:0;margin:0;padding:0;min-width:0}
+.opt legend{font-weight:700;font-size:14.5px;padding:0;margin-bottom:10px}
+.opt__vals{display:flex;flex-wrap:wrap;gap:8px}
+.opt__v{position:relative}
+.opt__v input{position:absolute;opacity:0;pointer-events:none}
+.opt__v span{display:inline-flex;align-items:center;gap:6px;min-height:42px;padding:8px 16px;border:1px solid var(--line-2);border-radius:var(--r);background:var(--card);font-size:14px;font-weight:500;cursor:pointer;transition:border-color .2s,box-shadow .2s,background .2s}
+.opt__v span small{color:var(--muted);font-size:12px}
+.opt__v:hover span{border-color:var(--ink)}
+.opt__v input:checked+span{border-color:var(--ink);box-shadow:inset 0 0 0 1px var(--ink);background:var(--paper-2)}
+.opt__v input:focus-visible+span{outline:2px solid var(--orange);outline-offset:2px}
+.opt.bad .opt__v span{border-color:#C2410C}
+.opt.bad .err{display:block}
+.ci .ci__opts,.sumlist .sum__opts{display:block;font:500 12.5px/1.4 var(--f-ar);color:var(--orange-2);margin-top:3px;letter-spacing:0}
+a.add{display:inline-flex;align-items:center;justify-content:center;text-decoration:none}

@@ -8,13 +8,26 @@ class ProductRequest extends AdminRequest
 {
     protected function prepareForValidation(): void
     {
-        // Drop spec rows that were added in the form but left completely empty.
+        // Drop spec rows, options and option values that were added in the form but left completely empty.
         $specs = collect($this->input('specs', []))
             ->filter(fn ($spec) => filled(array_filter([...(array) ($spec['label'] ?? []), ...(array) ($spec['value'] ?? [])])))
             ->values()
             ->all();
 
-        $this->merge(['specs' => $specs]);
+        $options = collect($this->input('options', []))
+            ->map(function ($option) {
+                $option['values'] = collect($option['values'] ?? [])
+                    ->filter(fn ($value) => filled(array_filter((array) ($value['label'] ?? []))))
+                    ->values()
+                    ->all();
+
+                return $option;
+            })
+            ->filter(fn ($option) => filled(array_filter((array) ($option['name'] ?? []))) || $option['values'] !== [])
+            ->values()
+            ->all();
+
+        $this->merge(['specs' => $specs, 'options' => $options]);
     }
 
     public function rules(): array
@@ -45,6 +58,14 @@ class ProductRequest extends AdminRequest
             ...$this->translatable('specs.*.value', ['required', 'string', 'max:255']),
             'pairs' => ['nullable', 'array'],
             'pairs.*' => ['integer', 'distinct', 'exists:products,id', Rule::notIn(array_filter([$product?->id]))],
+            // Options the customer chooses (e.g. amperage), each with its values and optional price change.
+            'options' => ['array', 'max:10'],
+            'options.*.id' => ['nullable', 'integer'],
+            ...$this->translatable('options.*.name', ['required', 'string', 'max:60']),
+            'options.*.values' => ['required', 'array', 'min:1', 'max:50'],
+            'options.*.values.*.id' => ['nullable', 'integer'],
+            ...$this->translatable('options.*.values.*.label', ['required', 'string', 'max:60']),
+            'options.*.values.*.price' => ['nullable', 'numeric', 'min:-99999', 'max:99999'],
             ...$this->publishingRules(),
         ];
     }
@@ -58,6 +79,8 @@ class ProductRequest extends AdminRequest
             'unit' => __('admin.fields.unit'),
             'specs.*.label' => __('admin.fields.spec_label'),
             'specs.*.value' => __('admin.fields.spec_value'),
+            'options.*.name' => __('admin.fields.option_name'),
+            'options.*.values.*.label' => __('admin.fields.option_value'),
         ]) + [
             'slug' => __('admin.fields.slug'),
             'sku' => __('admin.fields.sku'),
@@ -71,6 +94,8 @@ class ProductRequest extends AdminRequest
             'range_max' => __('admin.fields.range_max'),
             'images.*' => __('admin.fields.images'),
             'pairs.*' => __('admin.fields.pairs'),
+            'options.*.values' => __('admin.fields.option_values'),
+            'options.*.values.*.price' => __('admin.fields.option_price'),
         ];
     }
 }

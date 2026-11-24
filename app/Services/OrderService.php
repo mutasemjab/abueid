@@ -26,20 +26,20 @@ class OrderService
     }
 
     /**
-     * @param  array{name: string, phone: string, address: string, notes: ?string, area_id: int, payment_method: string, items: list<array{id: string, qty: int}>}  $data
+     * Cart lines are a product (slug), a quantity and the chosen option values ({option id: value id}).
+     * The same product with different options makes separate order lines.
+     *
+     * @param  array{name: string, phone: string, address: string, notes: ?string, area_id: int, payment_method: string, items: list<array{id: string, qty: int, options?: array<int|string, int|string>}>}  $data
      */
     public function place(array $data, ?Customer $customer = null): Order
     {
         return DB::transaction(function () use ($data, $customer) {
-            $quantities = collect($data['items'])
-                ->groupBy('id')
-                ->map(fn (Collection $lines) => (int) $lines->sum('qty'));
-
-            $products = $this->availableProducts($quantities->keys()->all());
-            $this->ensureStock($products, $quantities);
+            $cart = $this->mergeLines($data['items']);
+            $products = $this->availableProducts($cart->pluck('id')->unique()->values()->all())->keyBy('slug');
+            $this->ensureStock($products, $cart->groupBy('id')->map(fn (Collection $lines) => $lines->sum('qty')));
 
             $area = DeliveryArea::query()->active()->findOrFail($data['area_id']);
-            $lines = $products->map(fn (Product $product) => $this->line($product, $quantities[$product->slug]));
+            $lines = $cart->map(fn (array $line) => $this->line($products[$line['id']], $line['qty'], $line['options']));
             $subtotal = round($lines->sum('total'), 2);
             $fee = $this->deliveryFee($area, $subtotal);
 
@@ -78,6 +78,24 @@ class OrderService
     }
 
     /**
+     * Normalise the cart: integer option ids, identical lines (same product and options) merged.
+     *
+     * @return Collection<int, array{id: string, qty: int, options: array<int, int>}>
+     */
+    private function mergeLines(array $items): Collection
+    {
+        return collect($items)
+            ->map(function (array $item) {
+                $options = collect($item['options'] ?? [])->mapWithKeys(fn ($value, $option) => [(int) $option => (int) $value])->sortKeys()->all();
+
+                return ['id' => (string) $item['id'], 'qty' => (int) $item['qty'], 'options' => $options];
+            })
+            ->groupBy(fn (array $line) => $line['id'].'|'.json_encode($line['options']))
+            ->map(fn (Collection $same) => [...$same->first(), 'qty' => $same->sum('qty')])
+            ->values();
+    }
+
+    /**
      * @return Collection<int, Product>
      */
     private function availableProducts(array $slugs): Collection
@@ -85,7 +103,7 @@ class OrderService
         $products = Product::query()
             ->sellable()
             ->whereIn('slug', $slugs)
-            ->with('images')
+            ->with(['images', 'options.values'])
             ->lockForUpdate()
             ->get();
 
@@ -107,17 +125,57 @@ class OrderService
         }
     }
 
-    private function line(Product $product, int $quantity): array
+    /**
+     * @param  array<int, int>  $selection  option id => value id
+     */
+    private function line(Product $product, int $quantity, array $selection): array
     {
+        $chosen = $this->chosenValues($product, $selection);
+        $price = round($product->price + $chosen->sum('price_delta'), 2);
+
         return [
             'product_id' => $product->id,
             'name' => $product->name,
             'sku' => $product->sku,
+            'options' => $chosen->isEmpty() ? null : $chosen->map(fn ($value) => [
+                'name' => $value->option->name,
+                'value' => $value->label,
+            ])->values()->all(),
             'image' => $product->images->first()?->path,
-            'price' => $product->price,
+            'price' => $price,
             'quantity' => $quantity,
-            'total' => round($product->price * $quantity, 2),
+            'total' => round($price * $quantity, 2),
         ];
+    }
+
+    /**
+     * The chosen value of every option of the product. Every option needs exactly one of its
+     * own values; anything else (missing, foreign or extra choices) is rejected.
+     *
+     * @param  array<int, int>  $selection  option id => value id
+     * @return Collection<int, \App\Models\ProductOptionValue>
+     */
+    private function chosenValues(Product $product, array $selection): Collection
+    {
+        $extra = array_diff(array_keys($selection), $product->options->modelKeys());
+
+        $chosen = $product->options->map(function ($option) use ($selection, $product) {
+            $value = $option->values->firstWhere('id', $selection[$option->id] ?? null);
+
+            if (! $value) {
+                throw ValidationException::withMessages([
+                    'items' => __('front.err_option', ['option' => $option->name, 'name' => $product->name]),
+                ]);
+            }
+
+            return $value->setRelation('option', $option);
+        });
+
+        if ($extra) {
+            throw ValidationException::withMessages(['items' => __('front.err_unavailable')]);
+        }
+
+        return $chosen->values();
     }
 
     private function newNumber(): string

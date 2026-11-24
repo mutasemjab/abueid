@@ -32,7 +32,12 @@
                                         @if ($item->image)
                                             <img src="{{ media_url($item->image) }}" alt="" class="admin-thumb">
                                         @endif
-                                        <span class="fw-semibold">{{ $item->name }}</span>
+                                        <div>
+                                            <span class="fw-semibold d-block">{{ $item->name }}</span>
+                                            @if ($options = $item->optionsText())
+                                                <small class="text-warning-emphasis">{{ $options }}</small>
+                                            @endif
+                                        </div>
                                     </td>
                                     <td dir="ltr"><code>{{ $item->sku }}</code></td>
                                     <td dir="ltr">{{ number_format($item->price, 2) }}</td>

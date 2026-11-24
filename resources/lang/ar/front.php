@@ -121,6 +121,9 @@ return [
     'too_many'        => 'محاولات كثيرة. استنى دقيقة وجرّب مرة ثانية.',
     'session_expired' => 'انتهت الجلسة. حدّث الصفحة وجرّب مرة ثانية.',
     'err_stock'     => 'الكمية المتوفرة من «:name» هي :n فقط.',
+    'err_option'    => 'اختار «:option» للمنتج «:name».',
+    'choose_option' => 'اختار :option',
+    'choose'        => 'اختار',
 
     'payment_methods' => [
         'cod'  => 'الدفع عند الاستلام',

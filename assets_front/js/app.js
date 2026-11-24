@@ -29,7 +29,6 @@ remember(D.featured);
 const byId = id => cache.get(id);
 const catById = id => C.find(c => c.id === id);
 const brandById = id => B.find(b => b.id === id);
-const imgOf = p => p?.img || S.placeholder || "";
 const maxQty = p => (p.stock == null ? 999 : p.stock);       // null = stock not tracked
 const inStock = p => p.stock == null || p.stock > 0;
 
@@ -93,8 +92,18 @@ async function ensureProducts(ids) {
   } catch { return false; }
 }
 
-/* ---------- state ---------- */
-let cart = store.get("cart", []).filter(i => i && i.id && i.qty > 0);     // [{id, qty}]
+/* ---------- product options ----------
+   A selection is {optionId: valueId}. A product with options needs one value of each. */
+const hasOptions = p => (p?.options || []).length > 0;
+const chosenValues = (p, opts = {}) => (p.options || []).map(o => ({ option: o, value: o.values.find(v => String(v.id) === String(opts[o.id])) }));
+const isCompleteSelection = (p, opts = {}) => chosenValues(p, opts).every(c => c.value) && Object.keys(opts).length === (p.options || []).length;
+const unitPrice = (p, opts = {}) => p.price + chosenValues(p, opts).reduce((sum, c) => sum + (c.value?.delta || 0), 0);
+const optionsText = (p, opts = {}) => chosenValues(p, opts).filter(c => c.value).map(c => `${c.option.name}: ${c.value.label}`).join(" · ");
+
+/* ---------- state ----------
+   Cart lines: {id, qty, opts}. The same product with different options is a separate line. */
+const lineKey = l => `${l.id}|${Object.keys(l.opts || {}).sort().map(k => `${k}:${l.opts[k]}`).join(",")}`;
+let cart = store.get("cart", []).filter(i => i && i.id && i.qty > 0).map(i => ({ ...i, opts: i.opts || {} }));
 let favs = new Set([...store.get("favs", []), ...(me?.favourites || [])]);
 const saveCart = () => { store.set("cart", cart); paintCounts(); };
 const saveFavs = () => {
@@ -102,11 +111,22 @@ const saveFavs = () => {
   if (me) api("PUT", ACC.urls.favourites, { ids: [...favs] }).then(s => { me = s; }).catch(() => {});
 };
 const cartQty = () => cart.reduce((a, i) => a + i.qty, 0);
-const cartLines = () => cart.map(i => ({ ...i, p: byId(i.id) })).filter(l => l.p);   // lines whose product is loaded
-const cartSub = () => cartLines().reduce((a, l) => a + l.p.price * l.qty, 0);
+/** Lines whose product is loaded, with their key, unit price and options text. */
+const cartLines = () => cart.map(l => ({ ...l, key: lineKey(l), p: byId(l.id) })).filter(l => l.p)
+  .map(l => ({ ...l, price: unitPrice(l.p, l.opts), text: optionsText(l.p, l.opts) }));
+const cartSub = () => cartLines().reduce((a, l) => a + l.price * l.qty, 0);
+const qtyOfProduct = id => cart.filter(l => l.id === id).reduce((a, l) => a + l.qty, 0);
 const freeDelivery = sub => S.freeDeliveryFrom > 0 && sub >= S.freeDeliveryFrom;
 
 /* ---------- shared fragments ---------- */
+/** Product image; without a photo the store logo is shown (styled by .is-ph). */
+const photo = (src, attrs = "") => src
+  ? `<img src="${esc(src)}" ${attrs}>`
+  : `<img src="${esc(S.placeholder || "")}" class="is-ph" ${attrs}>`;
+/** "Add to cart" for simple products, "Choose" (opens the product page) when options must be picked first. */
+const addButton = (p, label = t("add")) => hasOptions(p)
+  ? `<a class="add" href="#p-${esc(p.id)}">${t("choose")}</a>`
+  : `<button class="add" type="button" data-add="${esc(p.id)}" ${inStock(p) ? "" : "disabled"}>${label}</button>`;
 const heart = `<svg viewBox="0 0 20 20" aria-hidden="true"><path d="M10 17s-6.5-3.9-6.5-8.6A3.6 3.6 0 0 1 10 6.3a3.6 3.6 0 0 1 6.5 2.1C16.5 13.1 10 17 10 17z"/></svg>`;
 function stockBadge(p) {
   if (!inStock(p)) return `<span class="stock stock--out">${t("out_stock")}</span>`;
@@ -119,7 +139,7 @@ function card(p, i = 0) {
   return `<article class="card reveal" style="--i:${i % 4}" data-id="${esc(p.id)}">
     <a class="card__media" href="#p-${esc(p.id)}" aria-label="${esc(p.name)}">
       <span class="card__sku">${esc(p.sku)}</span>
-      <img src="${esc(imgOf(p))}" alt="${esc(p.name)}" loading="lazy" width="900" height="900">
+      ${photo(p.img, `alt="${esc(p.name)}" loading="lazy" width="900" height="900"`)}
     </a>
     <button class="fav ${favs.has(p.id) ? "is-on" : ""}" type="button" data-fav="${esc(p.id)}" aria-label="favourite">${heart}</button>
     <div class="card__body">
@@ -129,7 +149,7 @@ function card(p, i = 0) {
       ${stockBadge(p)}
       <div class="card__foot">
         <span class="price">${priceOf(p)}</span>
-        <button class="add" type="button" data-add="${esc(p.id)}" ${inStock(p) ? "" : "disabled"}>${t("add")}</button>
+        ${addButton(p)}
       </div>
     </div>
   </article>`;
@@ -385,15 +405,16 @@ function renderPDP(p) {
     ...p.specs.map(s => [s.label, s.value, s.ltr])
   ].filter(Boolean);
   const pairs = p.pairs, related = p.related;
-  const images = p.images.length ? p.images : [imgOf(p)];
   const series = [p.brandName, p.series].filter(Boolean).map(esc).join(" · ");
+  const gallery = p.images.length
+    ? `<div class="gal__thumbs">${p.images.map((src, i) => `<button type="button" class="${i ? "" : "is-on"}" data-thumb="${i}"><img src="${esc(src)}" alt=""></button>`).join("")}</div>
+       <div class="gal__main" id="galMain"><img src="${esc(p.images[0])}" class="${isCutout(p.images[0]) ? "is-cut" : ""}" alt="${esc(p.name)}">`
+    : `<div class="gal__thumbs"></div><div class="gal__main gal__main--ph">${photo(null, `alt="${esc(p.name)}"`)}`;
   $("#pdp").innerHTML = `
   <div class="crumbs"><a href="#home">${t("home")}</a><span>/</span><a href="#cat-${esc(p.cat)}">${esc(catById(p.cat)?.name || "")}</a><span>/</span><b dir="ltr">${esc(p.sku)}</b></div>
-  <div class="pdp">
+  <div class="pdp" data-pdp="${esc(p.id)}">
     <div class="gal">
-      <div class="gal__thumbs">${images.map((src, i) => `<button type="button" class="${i ? "" : "is-on"}" data-thumb="${i}"><img src="${esc(src)}" alt=""></button>`).join("")}</div>
-      <div class="gal__main" id="galMain">
-        <img src="${esc(images[0])}" class="${isCutout(images[0]) ? "is-cut" : ""}" alt="${esc(p.name)}">
+      ${gallery}
         <button class="fav ${favs.has(p.id) ? "is-on" : ""}" type="button" data-fav="${esc(p.id)}" aria-label="favourite">${heart}</button>
       </div>
     </div>
@@ -401,7 +422,8 @@ function renderPDP(p) {
       <span class="info__series">${series}</span>
       <h1>${esc(p.name)}</h1>
       <p class="info__short">${esc(p.short || "")}</p>
-      <div class="info__price"><div><span class="price">${priceOf(p)}</span><small class="vat">${t("vat")}</small></div><span style="margin-inline-start:auto">${stockBadge(p)}</span></div>
+      <div class="info__price"><div><span class="price" id="pdpPrice">${priceOf(p)}</span><small class="vat">${t("vat")}</small></div><span style="margin-inline-start:auto">${stockBadge(p)}</span></div>
+      ${hasOptions(p) ? optionPicker(p) : ""}
       <div class="buy">
         <div class="qty" data-qty-wrap><button type="button" data-qd="-1" aria-label="-">−</button><input id="pdpQty" type="number" min="1" max="${Math.max(1, maxQty(p))}" value="1" inputmode="numeric"><button type="button" data-qd="1" aria-label="+">+</button></div>
         <button class="btn btn--primary btn--lg" type="button" data-add="${esc(p.id)}" data-from-pdp ${inStock(p) ? "" : "disabled"}>${t("add")}</button>
@@ -409,7 +431,7 @@ function renderPDP(p) {
       </div>
       ${ASSURANCES.length ? `<div class="assure">${ASSURANCES.map(a => `<div><b>${esc(a.title)}</b>${esc(a.text || "")}</div>`).join("")}</div>` : ""}
       <div class="specs"><h3>${t("specs_t")}</h3><table>${specs.map(([label, value, ltr]) => `<tr><th>${esc(label)}</th><td>${ltr ? `<span dir="ltr">${esc(value)}</span>` : esc(value)}</td></tr>`).join("")}</table></div>
-      ${pairs.length ? `<div class="pairs"><h4>${t("pairs_t")}</h4>${pairs.map(x => `<div class="pair"><img src="${esc(imgOf(x))}" alt=""><div><b>${esc(x.name)}</b><small>${esc(x.short || "")}</small></div><button class="add" type="button" data-add="${esc(x.id)}" ${inStock(x) ? "" : "disabled"}>+ ${priceOf(x)}</button></div>`).join('<div style="height:10px"></div>')}</div>` : ""}
+      ${pairs.length ? `<div class="pairs"><h4>${t("pairs_t")}</h4>${pairs.map(x => `<div class="pair">${photo(x.img, 'alt=""')}<div><b>${esc(x.name)}</b><small>${esc(x.short || "")}</small></div>${addButton(x, `+ ${priceOf(x)}`)}</div>`).join('<div style="height:10px"></div>')}</div>` : ""}
       <p style="margin-top:22px"><a class="link-arrow" target="_blank" rel="noopener" href="${esc(waUrl(t("wa_ask_product", { sku: p.sku })))}">${t("ask_wa")}</a></p>
     </div>
   </div>
@@ -417,28 +439,53 @@ function renderPDP(p) {
   observe();
 }
 
+/** One group of choices per option (e.g. Amperage: 1 A / 2 A). Nothing is pre-selected on purpose. */
+function optionPicker(p) {
+  const delta = d => d ? ` <small dir="ltr">${d > 0 ? "+" : "−"}${esc(moneyTxt(Math.abs(d)))}</small>` : "";
+  return `<div class="opts">${p.options.map(o => `<fieldset class="opt" data-opt="${o.id}">
+      <legend>${esc(o.name)}</legend>
+      <div class="opt__vals">${o.values.map(v => `<label class="opt__v"><input type="radio" name="opt-${o.id}" value="${v.id}"><span>${esc(v.label)}${delta(v.delta)}</span></label>`).join("")}</div>
+      <em class="err">${t("choose_option", { name: esc(o.name), option: esc(o.name) })}</em>
+    </fieldset>`).join("")}</div>`;
+}
+/** Selection made on the product page; marks the options still missing and returns null if incomplete. */
+function pdpSelection(p) {
+  const opts = {}; let complete = true;
+  (p.options || []).forEach(o => {
+    const checked = $(`#pdp input[name="opt-${o.id}"]:checked`);
+    $(`#pdp [data-opt="${o.id}"]`).classList.toggle("bad", !checked);
+    if (checked) opts[o.id] = +checked.value; else complete = false;
+  });
+  if (!complete) $("#pdp .opt.bad")?.scrollIntoView({ behavior: "smooth", block: "center" });
+  return complete ? opts : null;
+}
+
 /* ---------- cart ---------- */
-function addToCart(id, qty = 1, srcImg) {
-  const p = byId(id); if (!p || !inStock(p)) return;
-  const line = cart.find(i => i.id === id);
-  if (line) line.qty = Math.min(maxQty(p), line.qty + qty); else cart.push({ id, qty: Math.min(maxQty(p), qty) });
+function addToCart(id, qty = 1, srcImg, opts = {}) {
+  const p = byId(id); if (!p || !inStock(p) || !isCompleteSelection(p, opts)) return;
+  const key = lineKey({ id, opts });
+  const room = maxQty(p) - qtyOfProduct(id);                 // stock is per product, across its options
+  if (room <= 0) return;
+  const line = cart.find(l => lineKey(l) === key);
+  if (line) line.qty += Math.min(room, qty); else cart.push({ id, qty: Math.min(room, qty), opts });
   saveCart(); renderCart();
   if (srcImg) flyToCart(srcImg);
-  toast(`<img src="${esc(imgOf(p))}" alt=""><span>${t("added_toast")}</span><a href="#" data-open-cart>${t("view_cart")}</a>`);
+  toast(`${photo(p.img, 'alt=""')}<span>${t("added_toast")}</span><a href="#" data-open-cart>${t("view_cart")}</a>`);
 }
-function setQty(id, q) {
-  const p = byId(id), line = cart.find(i => i.id === id); if (!line || !p) return;
-  line.qty = Math.max(1, Math.min(maxQty(p), q)); saveCart(); renderCart(); if (current === "checkout") renderCheckout();
+function setQty(key, q) {
+  const line = cart.find(l => lineKey(l) === key), p = line && byId(line.id); if (!p) return;
+  const room = maxQty(p) - qtyOfProduct(line.id) + line.qty;
+  line.qty = Math.max(1, Math.min(room, q)); saveCart(); renderCart(); if (current === "checkout") renderCheckout();
 }
-function removeLine(id) { cart = cart.filter(i => i.id !== id); saveCart(); renderCart(); if (current === "checkout") renderCheckout(); }
+function removeLine(key) { cart = cart.filter(l => lineKey(l) !== key); saveCart(); renderCart(); if (current === "checkout") renderCheckout(); }
 function renderCart() {
   const sub = cartSub(), empty = !cart.length;
   $("#cartEmpty").hidden = !empty; $("#cartFoot").hidden = empty; $("#shipBar").hidden = empty || S.freeDeliveryFrom <= 0;
-  $("#cartItems").innerHTML = cartLines().map(({ p, qty }) => `<li class="ci" data-line="${esc(p.id)}">
-    <img src="${esc(imgOf(p))}" alt=""><div><b>${esc(p.name)}</b><small dir="ltr">${esc(p.sku)}</small>
-    <div class="ci__row"><div class="qty qty--sm"><button type="button" data-cq="${esc(p.id)}" data-d="-1">−</button><input value="${qty}" data-cqi="${esc(p.id)}" inputmode="numeric" aria-label="qty"><button type="button" data-cq="${esc(p.id)}" data-d="1">+</button></div>
-    <button class="ci__rm" type="button" data-rm="${esc(p.id)}">${t("remove")}</button></div></div>
-    <span class="price">${priceOf(p, p.price * qty)}</span></li>`).join("");
+  $("#cartItems").innerHTML = cartLines().map(({ p, qty, key, price, text }) => `<li class="ci" data-line="${esc(key)}">
+    ${photo(p.img, 'alt=""')}<div><b>${esc(p.name)}</b>${text ? `<small class="ci__opts">${esc(text)}</small>` : ""}<small dir="ltr">${esc(p.sku)}</small>
+    <div class="ci__row"><div class="qty qty--sm"><button type="button" data-cq="${esc(key)}" data-d="-1">−</button><input value="${qty}" data-cqi="${esc(key)}" inputmode="numeric" aria-label="qty"><button type="button" data-cq="${esc(key)}" data-d="1">+</button></div>
+    <button class="ci__rm" type="button" data-rm="${esc(key)}">${t("remove")}</button></div></div>
+    <span class="price">${priceOf(p, price * qty)}</span></li>`).join("");
   $$("[data-cart-sub]").forEach(e => e.innerHTML = money(sub));
   if (S.freeDeliveryFrom > 0) {
     const left = S.freeDeliveryFrom - sub;
@@ -482,7 +529,7 @@ function renderCheckout() {
   const sub = cartSub(), d = fee(), free = freeDelivery(sub);
   $("#coItems").innerHTML = !cart.length
     ? `<li style="display:block;color:var(--muted)">${t("co_empty")}</li>`
-    : cartLines().map(({ p, qty }) => `<li><span class="th"><img src="${esc(imgOf(p))}" alt=""><i>${qty}</i></span><b>${esc(p.name)}</b><span class="price">${money(p.price * qty)}</span></li>`).join("");
+    : cartLines().map(({ p, qty, price, text }) => `<li><span class="th">${photo(p.img, 'alt=""')}<i>${qty}</i></span><b>${esc(p.name)}${text ? `<small class="sum__opts">${esc(text)}</small>` : ""}</b><span class="price">${money(price * qty)}</span></li>`).join("");
   $("#areas").innerHTML = S.areas.map(a => `<label class="area"><input type="radio" name="area" value="${a.id}" ${a.id === area ? "checked" : ""}><span><b>${esc(a.name)}</b><i>${free ? t("free") : esc(moneyTxt(a.fee))}</i></span></label>`).join("");
   $$("[data-co-sub]").forEach(e => e.innerHTML = money(sub));
   $$("[data-co-del]").forEach(e => e.innerHTML = d ? money(d) : `<span style="color:var(--ok)">${t("free")}</span>`);
@@ -559,7 +606,7 @@ async function submitOrder(e) {
     const data = await api("POST", S.orderUrl, {
       name: v("name"), phone: v("phone"), address: v("address"), notes: v("notes"),
       area_id: currentArea().id, payment_method: fe(f, "pay").value,
-      items: cart.map(i => ({ id: i.id, qty: i.qty })),
+      items: cart.map(l => ({ id: l.id, qty: l.qty, options: l.opts })),
       create_account: signup, password: signup ? fe(f, "password").value : null
     });
     const { account, ...order } = data;
@@ -577,7 +624,7 @@ async function submitOrder(e) {
 }
 function orderText(o) {
   return [`*${t("wa_order")}* — ${o.no}`, "",
-    ...o.items.map(i => `• ${i.qty} × ${i.sku} — ${moneyTxt(i.total)}`), "",
+    ...o.items.map(i => `• ${i.qty} × ${i.sku}${i.options ? ` (${i.options})` : ""} — ${moneyTxt(i.total)}`), "",
     `${t("subtotal")}: ${moneyTxt(o.sub)}`, `${t("delivery")}: ${o.fee ? moneyTxt(o.fee) : t("free")}`, `*${t("total")}: ${moneyTxt(o.total)}*`, "",
     `${t("wa_name")}: ${o.name}`, `${t("wa_phone")}: ${o.phone}`, `${t("wa_area")}: ${o.area}`, `${t("wa_addr")}: ${o.address}`,
     `${t("wa_pay")}: ${payLabel(o.pay)}`, o.notes ? `${t("wa_notes")}: ${o.notes}` : ""].filter((x, i, arr) => x !== "" || arr[i - 1] !== "").join("\n");
@@ -594,7 +641,7 @@ function renderDone() {
       ${o.pay === "cliq" && S.cliqAlias ? `<p class="cliq">${t("cliq_note", { alias: esc(S.cliqAlias) })}</p>` : ""}</div>
     <div class="done__btns"><a class="btn btn--primary" target="_blank" rel="noopener" href="${esc(waUrl(orderText(o)))}">${t("send_wa")}</a>${me ? `<a class="btn btn--dark" href="#account">${t("acc_track")}</a>` : ""}<a class="btn btn--line" href="#shop">${t("continue")}</a></div>`;
 }
-const orderLines = items => `<ul class="sumlist">${items.map(i => `<li><span class="th"><img src="${esc(i.image || S.placeholder || "")}" alt=""><i>${i.qty}</i></span><b>${esc(i.name)}</b><span class="price">${money(i.total)}</span></li>`).join("")}</ul>`;
+const orderLines = items => `<ul class="sumlist">${items.map(i => `<li><span class="th">${photo(i.image, 'alt=""')}<i>${i.qty}</i></span><b>${esc(i.name)}${i.options ? `<small class="sum__opts">${esc(i.options)}</small>` : ""}</b><span class="price">${money(i.total)}</span></li>`).join("")}</ul>`;
 
 /* ---------- account ---------- */
 let accTab = "orders";
@@ -702,7 +749,7 @@ async function suggest(q) {
   if (seq !== sugSeq) return;                         // the customer kept typing
   sugIdx = -1;
   d.innerHTML = hits.length
-    ? hits.map(p => `<a class="sug" href="#p-${esc(p.id)}"><img src="${esc(imgOf(p))}" alt=""><span><b>${esc(p.name)}</b><small>${[p.sku, p.series].filter(Boolean).map(esc).join(" · ")}</small></span><em>${esc(moneyTxt(p.price))}</em></a>`).join("")
+    ? hits.map(p => `<a class="sug" href="#p-${esc(p.id)}">${photo(p.img, 'alt=""')}<span><b>${esc(p.name)}</b><small>${[p.sku, p.series].filter(Boolean).map(esc).join(" · ")}</small></span><em>${esc(moneyTxt(p.price))}</em></a>`).join("")
     : `<div class="sug-none">${t("search_none")}</div>`;
   d.classList.add("is-open");
 }
@@ -774,24 +821,29 @@ document.addEventListener("click", e => {
   if (!el) return;
   const d = el.dataset;
   if (d.add) {
-    const qty = d.fromPdp != null ? Math.max(1, parseInt($("#pdpQty").value) || 1) : 1;
-    const img = el.closest(".card,.pdp,.pair")?.querySelector(".card__media img,#galMain img,.pair img");
-    addToCart(d.add, qty, img);
+    const fromPdp = d.fromPdp != null, p = byId(d.add);
+    const opts = fromPdp && hasOptions(p) ? pdpSelection(p) : {};
+    if (!opts) return;                                     // an option is still missing (marked on the page)
+    const qty = fromPdp ? Math.max(1, parseInt($("#pdpQty").value) || 1) : 1;
+    const img = el.closest(".card,.pdp,.pair")?.querySelector(".card__media img,.gal__main img,.pair img");
+    addToCart(d.add, qty, img, opts);
     if (el.classList.contains("add")) { const txt = el.innerHTML; el.classList.add("ok"); el.textContent = t("added"); setTimeout(() => { el.classList.remove("ok"); el.innerHTML = txt; }, 1300); }
   } else if (d.buynow) {
+    const p = byId(d.buynow), opts = hasOptions(p) ? pdpSelection(p) : {};
+    if (!opts) return;
     const qty = Math.max(1, parseInt($("#pdpQty")?.value) || 1);
-    if (!cart.some(i => i.id === d.buynow)) { cart.push({ id: d.buynow, qty }); saveCart(); renderCart(); }
+    if (!cart.some(l => lineKey(l) === lineKey({ id: d.buynow, opts }))) addToCart(d.buynow, qty, null, opts);
     location.hash = "checkout";
   } else if (d.fav) {
     e.preventDefault();
     const on = !favs.has(d.fav); on ? favs.add(d.fav) : favs.delete(d.fav); saveFavs();
     $$(`[data-fav="${CSS.escape(d.fav)}"]`).forEach(b => { b.classList.toggle("is-on", on); b.classList.remove("pop"); void b.offsetWidth; b.classList.add("pop"); });
-    toast(`<img src="${esc(imgOf(byId(d.fav)))}" alt=""><span>${t(on ? "fav_added" : "fav_removed")}</span>`);
+    toast(`${photo(byId(d.fav)?.img, 'alt=""')}<span>${t(on ? "fav_added" : "fav_removed")}</span>`);
     if (current === "shop" && F.fav) renderShop();
     if (current === "account") renderAccount();
   } else if (d.openCart != null) { e.preventDefault(); openCart(); }
   else if (d.closeCart != null) { closeCart(); }
-  else if (d.cq) { const l = cart.find(i => i.id === d.cq); setQty(d.cq, l.qty + +d.d); }
+  else if (d.cq) { const l = cart.find(x => lineKey(x) === d.cq); if (l) setQty(d.cq, l.qty + +d.d); }
   else if (d.rm) { const li = el.closest(".ci"); li.classList.add("out"); setTimeout(() => removeLine(d.rm), 300); }
   else if (d.hero != null) { setHero(+d.hero); }
   else if (d.fbrand) { F.brands.has(d.fbrand) ? F.brands.delete(d.fbrand) : F.brands.add(d.fbrand); renderFilters(); renderShop(); }
@@ -859,6 +911,14 @@ document.addEventListener("change", e => {
     if (a) { applySavedAddress(a); renderCheckout(); }
   }
   else if (el.name === "create_account") { $("[data-signup-fields]").hidden = !el.checked; }
+  else if (el.name?.startsWith("opt-")) {
+    // Product page: the price follows the chosen options.
+    el.closest(".opt").classList.remove("bad");
+    const p = byId($("#pdp .pdp")?.dataset.pdp); if (!p) return;
+    const opts = {};
+    $$('#pdp .opt input:checked').forEach(i => { opts[i.name.slice(4)] = +i.value; });
+    $("#pdpPrice").innerHTML = priceOf(p, unitPrice(p, opts));
+  }
 });
 $("#q").addEventListener("keydown", e => {
   const items = $$("#searchDrop .sug");
@@ -920,10 +980,11 @@ addEventListener("hashchange", route);
 renderHome(); renderCart(); paintCounts(); paintAccountButton();
 route(); heroMotion(); observe();
 
-// Cart and favourites are stored as ids: load their products, then drop the ones no longer sold.
+// Cart and favourites are stored as ids: load their products, then drop the ones no longer sold
+// and cart lines whose chosen options were changed in the dashboard.
 ensureProducts([...cart.map(i => i.id), ...favs]).then(ok => {
   if (!ok) return;                                  // request failed: keep everything as it is
-  cart = cart.filter(i => byId(i.id));
+  cart = cart.filter(l => byId(l.id) && isCompleteSelection(byId(l.id), l.opts));
   favs = new Set([...favs].filter(byId));
   saveCart(); store.set("favs", [...favs]);
   if (me && favs.size !== me.favourites.length) saveFavs();   // push favourites collected before signing in

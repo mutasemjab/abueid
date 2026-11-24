@@ -6,6 +6,16 @@
         'label' => $spec->getTranslations('label'),
         'value' => $spec->getTranslations('value'),
     ])->all() ?? []);
+
+    $options = old('options', $product->options?->map(fn ($option) => [
+        'id' => $option->id,
+        'name' => $option->getTranslations('name'),
+        'values' => $option->values->map(fn ($value) => [
+            'id' => $value->id,
+            'label' => $value->getTranslations('label'),
+            'price' => $value->price_delta ?: null,
+        ])->all(),
+    ])->all() ?? []);
 @endphp
 
 @section('content')
@@ -43,6 +53,25 @@
                     </div>
                     <template id="specTemplate">
                         @include('admin.products.spec-row', ['index' => '__INDEX__', 'spec' => []])
+                    </template>
+                </x-admin.card>
+
+                <x-admin.card :title="__('admin.products.options')" icon="bi-ui-radios">
+                    <x-slot:actions>
+                        <button type="button" class="btn-outline-sm" data-add-option><i class="bi bi-plus"></i> {{ __('admin.products.add_option') }}</button>
+                    </x-slot:actions>
+                    <p class="form-text mt-0">{{ __('admin.products.options_hint') }}</p>
+                    @error('options')<div class="text-danger small mb-2">{{ $message }}</div>@enderror
+                    <div id="optionRows">
+                        @foreach ($options as $index => $option)
+                            @include('admin.products.option-row', ['index' => $index, 'option' => $option])
+                        @endforeach
+                    </div>
+                    <template id="optionTemplate">
+                        @include('admin.products.option-row', ['index' => '__OPTION__', 'option' => ['values' => [[]]]])
+                    </template>
+                    <template id="optionValueTemplate">
+                        @include('admin.products.option-value-row', ['optionIndex' => '__OPTION__', 'index' => '__VALUE__', 'value' => []])
                     </template>
                 </x-admin.card>
 
@@ -136,6 +165,38 @@
     rows.addEventListener('click', (event) => {
         const button = event.target.closest('[data-remove-spec]');
         if (button) button.closest('.spec-row').remove();
+    });
+})();
+
+// Options editor: add/remove options and their values. New rows get indexes that never collide
+// with existing ones (the server re-indexes everything on save).
+(() => {
+    const rows = document.getElementById('optionRows');
+    const optionTemplate = document.getElementById('optionTemplate').innerHTML;
+    const valueTemplate = document.getElementById('optionValueTemplate').innerHTML;
+    let nextOption = rows.children.length;
+    const nextValue = {};
+
+    document.querySelector('[data-add-option]').addEventListener('click', () => {
+        rows.insertAdjacentHTML('beforeend', optionTemplate.replaceAll('__OPTION__', `n${nextOption++}`));
+        rows.lastElementChild.querySelector('input[type="text"]')?.focus();
+    });
+
+    rows.addEventListener('click', (event) => {
+        const option = event.target.closest('.option-row');
+        if (!option) return;
+
+        if (event.target.closest('[data-remove-option]')) {
+            option.remove();
+        } else if (event.target.closest('[data-remove-option-value]')) {
+            event.target.closest('[data-option-value]').remove();
+        } else if (event.target.closest('[data-add-option-value]')) {
+            const index = option.dataset.optionIndex;
+            const list = option.querySelector('[data-option-values]');
+            nextValue[index] ??= list.children.length;
+            list.insertAdjacentHTML('beforeend', valueTemplate.replaceAll('__OPTION__', index).replaceAll('__VALUE__', `n${nextValue[index]++}`));
+            list.lastElementChild.querySelector('input')?.focus();
+        }
     });
 })();
 
